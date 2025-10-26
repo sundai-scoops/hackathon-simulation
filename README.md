@@ -46,7 +46,7 @@ You’ll get sliders for run counts, team ranges, pivot pressure, and research a
   export GOOGLE_API_KEY=your_key
   python3 main.py --runs 2 --llm-model gemini-flash-latest --profiles data/profiles.json
   ```
-- Each run now calls Gemini at every major phase (alignment, blending, critique, pivot, research, wrap-up) to surface dynamic agent chatter—very similar to the `genagents` style loops. A call budget (default 10) avoids runaway costs.
+- Each run now calls Gemini at every major phase (alignment, blending, critique, pivot, research, wrap-up) to surface dynamic agent chatter—very similar to the `genagents` style loops. A call budget (default 10) avoids runaway costs, and requests are throttled to one every two seconds.
 - Streamlit: paste your `GOOGLE_API_KEY`, choose model/temperature/budget (default `gemini-flash-latest`), and run.
 - Missing keys or misconfigured dependencies now stop the run immediately so you never read heuristic placeholders.
 - Tip: run `curl -H "Authorization: Bearer $GOOGLE_API_KEY" https://generativelanguage.googleapis.com/v1beta/models` to confirm the exact model ids your key can access.
