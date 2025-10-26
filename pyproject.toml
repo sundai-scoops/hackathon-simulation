@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.120.0",
     "langchain>=1.0.2",
     "langchain-google-genai>=3.0.0",
+    "pydantic>=2.12.3",
     "pymysql>=1.1.2",
     "sqlalchemy>=2.0.44",
     "streamlit>=1.50.0",

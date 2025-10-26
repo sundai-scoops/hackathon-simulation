@@ -1,228 +1,455 @@
 <!doctype html>
 <html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
+        <title>Hackathon Simulation</title>
+        <style>
+            :root {
+                --border: #ddd;
+                --muted: #666;
+                --bg: #fafafa;
+                --card: #fff;
+                --hover: #eee;
+                --text: #111;
+                --ok: #0a7a0a;
+                --err: #b51212;
+            }
 
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hackathon Simulation</title>
-    <style>
-        body {
-            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-            margin: 24px;
-        }
+            * {
+                box-sizing: border-box;
+            }
 
-        h1 {
-            margin-bottom: 8px;
-        }
+            body {
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    Segoe UI,
+                    Roboto,
+                    sans-serif;
+                margin: 24px;
+                color: var(--text);
+                background: #fff;
+            }
 
-        .controls {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 16px;
-        }
+            h1 {
+                margin: 0 0 6px;
+                line-height: 1.2;
+            }
 
-        button {
-            padding: 8px 12px;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            background: #f7f7f7;
-            cursor: pointer;
-        }
+            h2 {
+                margin: 16px 0 8px;
+                line-height: 1.2;
+            }
 
-        button:hover {
-            background: #eee;
-        }
+            .muted {
+                color: var(--muted);
+            }
 
-        .agents {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-            gap: 12px;
-            margin-bottom: 16px;
-        }
+            .controls {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin: 12px 0 16px;
+                align-items: center;
+            }
 
-        .card {
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 12px;
-            background: white;
-        }
+            button {
+                padding: 8px 12px;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                background: #f7f7f7;
+                cursor: pointer;
+            }
+            button:hover {
+                background: var(--hover);
+            }
+            button:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
 
-        .log {
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 12px;
-            background: #fafafa;
-            max-height: 50vh;
-            overflow: auto;
-        }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+                gap: 12px;
+            }
 
-        .msg {
-            padding: 6px 8px;
-            border-bottom: 1px dashed #e5e5e5;
-        }
+            .card {
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 12px;
+                background: var(--card);
+            }
 
-        .msg:last-child {
-            border-bottom: 0;
-        }
+            .group-card {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
 
-        .muted {
-            color: #666;
-            font-size: 12px;
-        }
-    </style>
-</head>
+            .group-header {
+                display: flex;
+                gap: 8px;
+                justify-content: space-between;
+                align-items: center;
+            }
 
-<body>
-    <h1>Hackathon Simulation</h1>
-    <p class="muted">Use the controls to step the simulation one turn at a time.</p>
-    <div class="controls">
-        <button id="btn-reset">Reset</button>
-        <button id="btn-turn">Simulate One Turn</button>
-        <span id="status" class="muted"></span>
-    </div>
+            .group-members {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+                gap: 8px;
+            }
 
-    <h2>Agents</h2>
-    <div id="agents" class="agents"></div>
+            .member {
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 8px;
+                background: var(--card);
+            }
 
-    <h2>Groups</h2>
-    <div class="controls">
-        <input type="number" id="num-groups" min="1" value="2" style="width:90px; padding:6px 8px;" />
-        <button id="btn-regroup">Regroup</button>
-    </div>
-    <div id="groups"></div>
+            .log {
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 12px;
+                background: var(--bg);
+                max-height: 50vh;
+                overflow: auto;
+            }
 
-    <script>
-        const statusEl = document.getElementById('status');
-        const agentsEl = document.getElementById('agents');
-        const groupsEl = document.getElementById('groups');
+            .msg {
+                padding: 6px 8px;
+                border-bottom: 1px dashed #e5e5e5;
+                word-wrap: break-word;
+                white-space: pre-wrap;
+            }
 
-        async function api(path, opts = {}) {
-            const res = await fetch(path, opts);
-            if (!res.ok) throw new Error(await res.text());
-            return await res.json();
-        }
+            .msg:last-child {
+                border-bottom: 0;
+            }
 
-        function renderAgents(list) {
-            agentsEl.innerHTML = '';
-            list.forEach(a => {
-                const div = document.createElement('div');
-                div.className = 'card';
-                div.innerHTML = `<strong>${a.name}</strong><br/><span class="muted">${a.personality}</span><br/><em>${a.idea}</em>`;
-                agentsEl.appendChild(div);
-            });
-        }
+            .row {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                flex-wrap: wrap;
+            }
 
-        function renderGroup(gi, items, members) {
-            const container = document.createElement('div');
-            container.className = 'card';
-            const header = document.createElement('div');
-            header.style.display = 'flex';
-            header.style.justifyContent = 'space-between';
-            header.style.alignItems = 'center';
-            header.innerHTML = `<strong>Group ${gi + 1}</strong>`;
-            const btn = document.createElement('button');
-            btn.textContent = 'Simulate One Turn';
-            btn.addEventListener('click', async () => {
-                statusEl.textContent = `Simulating turn for Group ${gi + 1}...`;
+            .spacer {
+                flex: 1 1 auto;
+            }
+
+            .status-ok {
+                color: var(--ok);
+            }
+
+            .status-err {
+                color: var(--err);
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Hackathon Simulation</h1>
+        <p class="muted">
+            Use the controls to step the simulation one turn at a time.
+        </p>
+
+        <div class="controls">
+            <button
+                id="btn-reset"
+                type="button"
+                title="Clear all conversations"
+            >
+                Reset
+            </button>
+            <button
+                id="btn-turn"
+                type="button"
+                title="Simulate one global turn across all groups"
+            >
+                Simulate One Turn
+            </button>
+            <span
+                id="status"
+                class="muted"
+                role="status"
+                aria-live="polite"
+            ></span>
+        </div>
+
+        <h2>Agents</h2>
+        <div id="agents" class="grid" aria-live="polite"></div>
+
+        <div class="row" style="margin-top: 8px">
+            <h2 style="margin: 0">Groups</h2>
+            <div class="spacer"></div>
+            <button
+                id="btn-refresh-groups"
+                type="button"
+                title="Refresh groups and conversations"
+            >
+                Refresh
+            </button>
+        </div>
+        <div id="groups" class="grid" aria-live="polite"></div>
+
+        <script>
+            const statusEl = document.getElementById("status");
+            const agentsEl = document.getElementById("agents");
+            const groupsEl = document.getElementById("groups");
+            const btnReset = document.getElementById("btn-reset");
+            const btnTurn = document.getElementById("btn-turn");
+            const btnRefreshGroups =
+                document.getElementById("btn-refresh-groups");
+
+            // API helper
+            async function api(path, opts = {}) {
+                const res = await fetch(path, {
+                    headers: { "Content-Type": "application/json" },
+                    cache: "no-store",
+                    ...opts,
+                });
+                if (!res.ok) {
+                    const text = await res.text().catch(() => "");
+                    throw new Error(text || `Request failed: ${res.status}`);
+                }
+                const ct = res.headers.get("content-type") || "";
+                if (ct.includes("application/json")) return res.json();
+                return res.text();
+            }
+
+            function setStatus(text, kind = "muted") {
+                statusEl.textContent = text || "";
+                statusEl.className = `muted ${
+                    kind === "ok"
+                        ? "status-ok"
+                        : kind === "err"
+                          ? "status-err"
+                          : ""
+                }`;
+                if (text && kind !== "err") {
+                    setTimeout(() => {
+                        if (statusEl.textContent === text)
+                            statusEl.textContent = "";
+                    }, 1000);
+                }
+            }
+
+            // Basic HTML escaping for message text and user-provided fields
+            function escapeHtml(str) {
+                return String(str ?? "")
+                    .replaceAll("&", "&amp;")
+                    .replaceAll("<", "&lt;")
+                    .replaceAll(">", "&gt;")
+                    .replaceAll('"', "&quot;")
+                    .replaceAll("'", "&#39;");
+            }
+
+            // Render agents grid
+            function renderAgents(list) {
+                agentsEl.innerHTML = "";
+                (list || []).forEach((a) => {
+                    const div = document.createElement("div");
+                    div.className = "card";
+                    div.innerHTML = `
+            <div><strong>${escapeHtml(a.name)}</strong></div>
+            <div class="muted">${escapeHtml(a.personality)}</div>
+            <div><em>${escapeHtml(a.idea)}</em></div>
+            <div class="muted">Group: ${escapeHtml(a.conversation_group)}</div>
+          `;
+                    agentsEl.appendChild(div);
+                });
+            }
+
+            // Render a single group card (members + conversation log)
+            function renderGroupCard(groupId, members, messages) {
+                const container = document.createElement("div");
+                container.className = "card group-card";
+
+                const header = document.createElement("div");
+                header.className = "group-header";
+
+                const title = document.createElement("div");
+                title.innerHTML = `<strong>Group ${escapeHtml(groupId)}</strong>`;
+
+                const btnSim = document.createElement("button");
+                btnSim.textContent = "Simulate One Turn";
+                btnSim.title = "Advances one global turn across all groups";
+                btnSim.addEventListener("click", async () => {
+                    setStatus("Simulating turn...");
+                    btnSim.disabled = true;
+                    try {
+                        await api("/simulate/turn", { method: "POST" });
+                        await Promise.all([refreshAgents(), refreshGroups()]);
+                        setStatus("Turn complete", "ok");
+                    } catch (e) {
+                        console.error(e);
+                        setStatus("Simulation failed", "err");
+                    } finally {
+                        btnSim.disabled = false;
+                    }
+                });
+
+                header.appendChild(title);
+                header.appendChild(btnSim);
+
+                // Members
+                const membersWrap = document.createElement("div");
+                const membersGrid = document.createElement("div");
+                membersGrid.className = "group-members";
+                (members || []).forEach((m) => {
+                    const md = document.createElement("div");
+                    md.className = "member";
+                    md.innerHTML = `
+            <div><strong>${escapeHtml(m.name)}</strong></div>
+            <div class="muted">${escapeHtml(m.personality)}</div>
+            <div><em>${escapeHtml(m.idea)}</em></div>
+          `;
+                    membersGrid.appendChild(md);
+                });
+                membersWrap.appendChild(membersGrid);
+
+                // Conversation log
+                const log = document.createElement("div");
+                log.className = "log";
+                (messages || []).forEach((msg) => {
+                    const div = document.createElement("div");
+                    div.className = "msg";
+                    const ts = msg.created_at
+                        ? ` <span class="muted">(${new Date(
+                              msg.created_at,
+                          ).toLocaleTimeString()})</span>`
+                        : "";
+                    div.innerHTML = `<strong>Turn ${escapeHtml(
+                        msg.turn,
+                    )}</strong>${ts} — ${escapeHtml(msg.speaker)}: ${escapeHtml(
+                        msg.text,
+                    )}`;
+                    log.appendChild(div);
+                });
+
+                // Compose card
+                container.appendChild(header);
+                container.appendChild(membersWrap);
+                container.appendChild(log);
+
+                // Auto-scroll to bottom on render
+                requestAnimationFrame(() => {
+                    log.scrollTop = log.scrollHeight;
+                });
+
+                return container;
+            }
+
+            // Fetch and render agents
+            async function refreshAgents() {
+                const agents = await api("/agents");
+                renderAgents(agents);
+            }
+
+            // Fetch and render groups with conversations
+            async function refreshGroups() {
+                groupsEl.innerHTML = "";
+                const data = await api("/groups");
+                const groups = (data && data.groups) || [];
+
+                // Fetch conversations in parallel
+                const convs = await Promise.all(
+                    groups.map(async (g) => {
+                        try {
+                            const conv = await api(
+                                `/groups/${encodeURIComponent(g.group)}/conversation`,
+                            );
+                            return {
+                                group: g.group,
+                                members: g.members || [],
+                                messages: (conv && conv.messages) || [],
+                            };
+                        } catch (e) {
+                            console.error(
+                                "Failed to load conversation for group",
+                                g.group,
+                                e,
+                            );
+                            return {
+                                group: g.group,
+                                members: g.members || [],
+                                messages: [],
+                            };
+                        }
+                    }),
+                );
+
+                // Sort by group id for stable order
+                convs.sort((a, b) =>
+                    a.group < b.group ? -1 : a.group > b.group ? 1 : 0,
+                );
+
+                convs.forEach(({ group, members, messages }) => {
+                    const card = renderGroupCard(group, members, messages);
+                    groupsEl.appendChild(card);
+                });
+            }
+
+            // Event handlers
+            btnReset.addEventListener("click", async () => {
+                setStatus("Resetting...");
+                btnReset.disabled = true;
                 try {
-                    await api(`/groups/${gi}/simulate/turn`, { method: 'POST' });
-                    await refreshGroups();
-                    statusEl.textContent = 'Turn complete';
-                    setTimeout(() => statusEl.textContent = '', 800);
+                    await api("/reset", { method: "POST" });
+                    await Promise.all([refreshAgents(), refreshGroups()]);
+                    setStatus("Reset complete", "ok");
                 } catch (e) {
-                    statusEl.textContent = 'Simulation failed';
+                    console.error(e);
+                    setStatus("Reset failed", "err");
+                } finally {
+                    btnReset.disabled = false;
                 }
             });
-            header.appendChild(btn);
-            // Members grid
-            const membersWrap = document.createElement('div');
-            membersWrap.style.margin = '8px 0 12px';
-            const membersGrid = document.createElement('div');
-            membersGrid.className = 'agents';
-            (members || []).forEach(m => {
-                const md = document.createElement('div');
-                md.className = 'card';
-                md.innerHTML = `<strong>${m.name}</strong><br/><span class="muted">${m.personality}</span><br/><em>${m.idea}</em>`;
-                membersGrid.appendChild(md);
+
+            btnTurn.addEventListener("click", async () => {
+                setStatus("Simulating turn...");
+                btnTurn.disabled = true;
+                try {
+                    await api("/simulate/turn", { method: "POST" });
+                    await Promise.all([refreshAgents(), refreshGroups()]);
+                    setStatus("Turn complete", "ok");
+                } catch (e) {
+                    console.error(e);
+                    setStatus("Simulation failed", "err");
+                } finally {
+                    btnTurn.disabled = false;
+                }
             });
-            const log = document.createElement('div');
-            log.className = 'log';
-            items.forEach(m => {
-                const div = document.createElement('div');
-                div.className = 'msg';
-                div.innerHTML = `<strong>Turn ${m.turn}</strong> — ${m.speaker}: ${m.text}`;
-                log.appendChild(div);
+
+            btnRefreshGroups.addEventListener("click", async () => {
+                setStatus("Refreshing groups...");
+                btnRefreshGroups.disabled = true;
+                try {
+                    await refreshGroups();
+                    setStatus("Groups refreshed", "ok");
+                } catch (e) {
+                    console.error(e);
+                    setStatus("Refresh failed", "err");
+                } finally {
+                    btnRefreshGroups.disabled = false;
+                }
             });
-            container.appendChild(header);
-            membersWrap.appendChild(membersGrid);
-            container.appendChild(membersWrap);
-            container.appendChild(log);
-            return container;
-        }
 
-        async function refreshGroups() {
-            groupsEl.innerHTML = '';
-            const groups = await api('/groups');
-            for (const g of groups.groups) {
-                const convo = await api(`/groups/${g.group}/conversation`);
-                const el = renderGroup(g.group, (convo.messages || []), g.members || []);
-                groupsEl.appendChild(el);
-            }
-        }
-
-        async function refresh() {
-            statusEl.textContent = 'Loading...';
-            try {
-                const [agents] = await Promise.all([
-                    api('/agents'),
-                ]);
-                renderAgents(agents);
-                statusEl.textContent = '';
-            } catch (e) {
-                statusEl.textContent = 'Failed to load data';
-            }
-        }
-
-        document.getElementById('btn-reset').addEventListener('click', async () => {
-            statusEl.textContent = 'Resetting...';
-            try {
-                await api('/reset', { method: 'POST' });
-                await refresh();
-                statusEl.textContent = 'Reset complete';
-                setTimeout(() => statusEl.textContent = '', 800);
-            } catch (e) {
-                statusEl.textContent = 'Reset failed';
-            }
-        });
-
-        document.getElementById('btn-turn').addEventListener('click', async () => {
-            statusEl.textContent = 'Simulating turn...';
-            try {
-                await api('/simulate/turn', { method: 'POST' });
-                await refresh();
-                await refreshGroups();
-                statusEl.textContent = 'Turn complete';
-                setTimeout(() => statusEl.textContent = '', 800);
-            } catch (e) {
-                statusEl.textContent = 'Simulation failed';
-            }
-        });
-
-        document.getElementById('btn-regroup').addEventListener('click', async () => {
-            statusEl.textContent = 'Regrouping...';
-            const n = parseInt(document.getElementById('num-groups').value || '1', 10);
-            try {
-                await api('/groups/regroup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ num_groups: n }) });
-                await refreshGroups();
-                statusEl.textContent = 'Regrouped';
-                setTimeout(() => statusEl.textContent = '', 800);
-            } catch (e) {
-                statusEl.textContent = 'Regroup failed';
-            }
-        });
-
-        (async () => { await refresh(); await refreshGroups(); })();
-    </script>
-</body>
-
+            // Initial load
+            (async function init() {
+                try {
+                    setStatus("Loading...");
+                    await Promise.all([refreshAgents(), refreshGroups()]);
+                    setStatus("");
+                } catch (e) {
+                    console.error(e);
+                    setStatus("Failed to load data", "err");
+                }
+            })();
+        </script>
+    </body>
 </html>
