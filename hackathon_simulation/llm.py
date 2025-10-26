@@ -2,90 +2,98 @@ from __future__ import annotations
 
 import json
 import os
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-try:
-    from langchain_google_genai import ChatGoogleGenerativeAI  # type: ignore
-except Exception:  # pragma: no cover - optional dependency may be missing or outdated
-    ChatGoogleGenerativeAI = None
+from google import genai
+from google.genai import types
 
 from .models import AgentProfile, SimulationConfig
+
+
+def _pretty(data: Optional[Dict[str, float]]) -> str:
+    if not data:
+        return "n/a"
+    try:
+        return json.dumps(data, sort_keys=True)
+    except Exception:
+        return str(data)
 
 
 class LLMResponder:
     def __init__(self, model: str, temperature: float, call_cap: int, api_key: Optional[str] = None):
         self.model_id = model
         self.temperature = temperature
-        self.api_key = api_key or os.environ.get("GOOGLE_API_KEY")
-        self.call_cap = max(0, call_cap)
-        self.remaining_calls = self.call_cap
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if not self.api_key:
-            raise ValueError("GOOGLE_API_KEY not set. Provide a valid key to run the simulation.")
-        if ChatGoogleGenerativeAI is None:
-            raise ImportError(
-                "langchain_google_genai is not installed. "
-                "Install it with `python3 -m pip install langchain-google-genai`."
+            raise ValueError(
+                "Gemini API key is required. Set GEMINI_API_KEY or GOOGLE_API_KEY before running the simulation."
             )
         try:
-            self._client = ChatGoogleGenerativeAI(
-                model=self.model_id,
-                temperature=self.temperature,
-                max_retries=2,
-                google_api_key=self.api_key,
-            )
-        except Exception as exc:  # pragma: no cover - external dependency
-            raise RuntimeError(f"Failed to initialise LLM client: {exc}") from exc
-
-    @property
-    def available(self) -> bool:
-        return True
+            self._client = genai.Client(api_key=self.api_key)
+        except Exception as exc:  # pragma: no cover - client initialisation errors
+            raise RuntimeError(f"Failed to initialise Gemini client: {exc}") from exc
+        self.call_cap = max(1, call_cap)
+        self.remaining_calls = self.call_cap
 
     def generate_team_update(
         self,
         team: List[AgentProfile],
         idea: str,
         phase: str,
-        metrics: Optional[dict[str, float]] = None,
-        scores: Optional[dict[str, float]] = None,
-    ) -> Optional[str]:
+        metrics: Optional[Dict[str, float]] = None,
+        scores: Optional[Dict[str, float]] = None,
+    ) -> str:
         if self.remaining_calls == 0:
             raise RuntimeError("LLM call cap reached for this simulation.")
         member_lines = ", ".join(f"{member.name} ({member.role})" for member in team)
-        metrics_str = json_pretty(metrics) if metrics else "Not supplied"
-        scores_str = json_pretty(scores) if scores else "Not yet scored"
         prompt = (
-            "You are moderating a hackathon simulation. "
-            "Given the current team context, write one concise insight (max 3 sentences) "
-            "that reflects probable team conversation. "
-            "Focus on next steps, critique, or validation pressure.\n\n"
+            "You are moderating a hackathon sprint. "
+            "Produce one concise insight (<=3 sentences) that reflects what this team likely says next. "
+            "Focus on critique, next steps, or validation pressure.\n\n"
             f"Phase: {phase}\n"
             f"Team: {member_lines}\n"
             f"Idea: {idea}\n"
-            f"Metrics snapshot: {metrics_str}\n"
-            f"Score snapshot: {scores_str}\n"
+            f"Metrics: {_pretty(metrics)}\n"
+            f"Scores: {_pretty(scores)}\n"
             "Insight:"
         )
+        contents = [
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=prompt)],
+            )
+        ]
+        config = types.GenerateContentConfig(
+            temperature=self.temperature,
+            top_p=0.95,
+            max_output_tokens=1024,
+        )
         try:
-            response = self._client.invoke(prompt)
-        except Exception as exc:  # pragma: no cover - external dependency
-            raise RuntimeError(f"LLM call failed: {exc}") from exc
-        self.remaining_calls = max(0, self.remaining_calls - 1)
-        text = ""
-        if hasattr(response, "content"):
-            text = response.content if isinstance(response.content, str) else "".join(map(str, response.content))
-        else:
-            text = str(response)
-        return text.strip() or None
+            response = self._client.models.generate_content(
+                model=self.model_id,
+                contents=contents,
+                config=config,
+            )
+        except Exception as exc:  # pragma: no cover - Gemini errors
+            raise RuntimeError(f"Gemini call failed: {exc}") from exc
+        self.remaining_calls -= 1
+        text = extract_text(response)
+        if not text:
+            raise RuntimeError("Gemini returned an empty response.")
+        return text.strip()
 
 
-def build_responder(config: SimulationConfig) -> Optional[LLMResponder]:
+def build_responder(config: SimulationConfig) -> LLMResponder:
     return LLMResponder(config.llm_model, config.llm_temperature, config.llm_call_cap)
 
 
-def json_pretty(payload: Optional[dict[str, float]]) -> str:
-    if not payload:
-        return "Not supplied"
-    try:
-        return json.dumps(payload, sort_keys=True)
-    except (TypeError, ValueError):
-        return str(payload)
+def extract_text(response: types.GenerateContentResponse) -> str:
+    if hasattr(response, "text") and response.text:
+        return response.text
+    parts = []
+    for candidate in getattr(response, "candidates", []) or []:
+        if getattr(candidate, "content", None):
+            for part in candidate.content.parts:
+                if getattr(part, "text", ""):
+                    parts.append(part.text)
+    return "".join(parts)

@@ -104,7 +104,7 @@ def main() -> None:
         seed = st.number_input("Base seed", min_value=0, max_value=10_000, value=42, step=1)
 
         st.subheader("LLM")
-        llm_model = st.text_input("Model", value="gemini-1.5-flash")
+        llm_model = st.text_input("Model", value="gemini-flash-latest")
         llm_temperature = st.slider("Temperature", min_value=0.0, max_value=1.5, value=0.9, step=0.05)
         llm_call_cap = st.number_input("Call budget", min_value=1, max_value=5000, value=500, step=50)
         llm_key = st.text_input("GOOGLE_API_KEY", type="password")

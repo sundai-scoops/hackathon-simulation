@@ -11,7 +11,7 @@ This project stress-tests hackathon ideas by simulating short iterative rounds. 
 - System Python (no virtualenv):
   ```bash
   python3 -m pip install --upgrade pip
-  python3 -m pip install streamlit langchain langchain-google-genai
+  python3 -m pip install streamlit google-genai
   export GOOGLE_API_KEY=your_key  # required for Gemini-backed simulation
   python3 main.py --runs 2 --seed 13 --profiles data/profiles.json
   ```
@@ -40,15 +40,16 @@ You’ll get sliders for run counts, team ranges, pivot pressure, and research a
 - Download buttons for the same JSON/Markdown exports as the CLI.
 
 ### LLM-powered insights (optional)
-- Requires a Google Generative AI key (`GOOGLE_API_KEY`).
+- Requires a Google Generative AI key (`GEMINI_API_KEY` or `GOOGLE_API_KEY`).
 - CLI example:
   ```bash
   export GOOGLE_API_KEY=your_key
-  python3 main.py --runs 2 --llm-model gemini-1.5-flash --profiles data/profiles.json
+  python3 main.py --runs 2 --llm-model gemini-flash-latest --profiles data/profiles.json
   ```
 - Each run now calls Gemini at every major phase (alignment, blending, critique, pivot, research, wrap-up) to surface dynamic agent chatter—very similar to the `genagents` style loops. A call budget (default 500) avoids runaway costs.
-- Streamlit: paste your `GOOGLE_API_KEY`, choose model/temperature/budget, and run.
+- Streamlit: paste your `GOOGLE_API_KEY`, choose model/temperature/budget (default `gemini-flash-latest`), and run.
 - Missing keys or misconfigured dependencies now stop the run immediately so you never read heuristic placeholders.
+- Tip: run `curl -H "Authorization: Bearer $GOOGLE_API_KEY" https://generativelanguage.googleapis.com/v1beta/models` to confirm the exact model ids your key can access.
 
 ### Custom profiles
 The CLI expects a JSON array where each entry contains at least:
