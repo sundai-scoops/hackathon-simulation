@@ -31,10 +31,18 @@ class HackathonSimulator:
             run_seed = rng.randint(0, 10_000)
             run_rng = random.Random(run_seed)
             teams = self._form_teams(self.profiles, run_rng)
+            if run_idx == 1:
+                print(f"[run {run_idx}] formed {len(teams)} teams — kicking off rounds…")
             results = [self._simulate_team(team, run_rng) for team in teams]
             results.sort(key=lambda t: t.total_score, reverse=True)
             for rank, team in enumerate(results, start=1):
                 team.run_rank = rank
+                if self.config.progress_interval and rank % self.config.progress_interval == 0:
+                    print(
+                        f"  · team {rank} ({team.team_name}) locked idea: {team.final_idea[:80]}… "
+                        f"score {team.total_score:.2f}"
+                    )
+            print(f"[run {run_idx}] complete — top score {results[0].total_score:.2f}")
             runs.append(SimulationRunResult(run_index=run_idx, seed=run_seed, teams=results))
         leaderboard = self._aggregate_runs(runs)
         return SimulationSummary(runs=runs, leaderboard=leaderboard)

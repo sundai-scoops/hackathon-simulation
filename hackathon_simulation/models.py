@@ -25,7 +25,8 @@ class SimulationConfig:
     seed: int = 42
     llm_model: str = "gemini-flash-latest"
     llm_temperature: float = 0.9
-    llm_call_cap: int = 500
+    llm_call_cap: int = 10
+    progress_interval: int = 1
 
 
 @dataclass

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Dict, List, Optional
 
 from google import genai
@@ -28,6 +29,8 @@ class LLMResponder:
             raise ValueError(
                 "Gemini API key is required. Set GEMINI_API_KEY or GOOGLE_API_KEY before running the simulation."
             )
+        self._last_call_ts = 0.0
+        self._min_interval = 2.0
         try:
             self._client = genai.Client(api_key=self.api_key)
         except Exception as exc:  # pragma: no cover - client initialisation errors
@@ -63,6 +66,10 @@ class LLMResponder:
                 parts=[types.Part.from_text(text=prompt)],
             )
         ]
+        now = time.time()
+        elapsed = now - self._last_call_ts
+        if self._last_call_ts and elapsed < self._min_interval:
+            time.sleep(self._min_interval - elapsed)
         config = types.GenerateContentConfig(
             temperature=self.temperature,
             top_p=0.95,
@@ -77,6 +84,7 @@ class LLMResponder:
         except Exception as exc:  # pragma: no cover - Gemini errors
             raise RuntimeError(f"Gemini call failed: {exc}") from exc
         self.remaining_calls -= 1
+        self._last_call_ts = time.time()
         text = extract_text(response)
         if not text:
             raise RuntimeError("Gemini returned an empty response.")

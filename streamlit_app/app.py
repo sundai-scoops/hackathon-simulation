@@ -106,7 +106,7 @@ def main() -> None:
         st.subheader("LLM")
         llm_model = st.text_input("Model", value="gemini-flash-latest")
         llm_temperature = st.slider("Temperature", min_value=0.0, max_value=1.5, value=0.9, step=0.05)
-        llm_call_cap = st.number_input("Call budget", min_value=1, max_value=5000, value=500, step=50)
+        llm_call_cap = st.number_input("Call budget", min_value=1, max_value=5000, value=10, step=10)
         llm_key = st.text_input("GOOGLE_API_KEY", type="password")
 
         run_simulation = st.button("Run simulation", type="primary")
