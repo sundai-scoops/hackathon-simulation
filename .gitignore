@@ -1,0 +1,17 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+
+# Environments & tooling
+.venv/
+.env
+.cache/
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Streamlit / reports
+reports/
+

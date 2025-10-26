@@ -1,60 +1,60 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
-import os
+from __future__ import annotations
 
-# Define agent personalities and ideas
-agents = [
-    {
-        "name": f"Agent {i + 1}",
-        "personality": f"Personality {i + 1}",
-        "idea": f"Idea {i + 1}",
-    }
-    for i in range(16)
-]
+import argparse
+import json
 
-# Create LLM class
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    temperature=1.0,
-    max_retries=2,
-    google_api_key=os.environ.get("GOOGLE_API_KEY"),
+from hackathon_simulation import (
+    HackathonSimulator,
+    SimulationConfig,
+    ensure_parent_dir,
+    load_profiles,
+    parse_team_size,
+    print_summary,
+    summary_to_dict,
+    summary_to_markdown,
 )
 
-# Bind tools to the model
-model = llm.bind_tools([])
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run hackathon idea simulations.")
+    parser.add_argument("--profiles", type=str, default=None, help="Optional path to JSON profile definitions.")
+    parser.add_argument("--runs", type=int, default=5, help="Number of simulation runs to execute.")
+    parser.add_argument("--seed", type=int, default=42, help="Base random seed.")
+    parser.add_argument(
+        "--team-size",
+        type=str,
+        default="2-4",
+        help="Desired team size range, e.g., '2-4'.",
+    )
+    parser.add_argument("--json-out", type=str, default=None, help="Optional path to write summary JSON.")
+    parser.add_argument("--markdown-out", type=str, default=None, help="Optional path to write summary Markdown.")
+    return parser
 
 
-# Simulate hackathon conversations
-def simulate_hackathon(agents, turns=5):
-    token_usage = 0
-    conversation_log = []
+def main() -> None:
+    parser = build_arg_parser()
+    args = parser.parse_args()
 
-    for turn in range(1, turns + 1):
-        print(f"--- Turn {turn} ---")
-        turn_log = {"turn": turn, "interactions": []}
-        for agent in agents:
-            prompt = (
-                f"{agent['name']} with {agent['personality']} says: "
-                f"My idea is {agent['idea']}. What do you think?"
-            )
-            response = model.invoke(prompt)
-            print(f"{agent['name']} received response: {response}")
-            token_usage += len(prompt.split()) + response.additional_kwargs.get(
-                "usage_metadata", {}
-            ).get("total_tokens", 0)
-            turn_log["interactions"].append(
-                {"agent": agent["name"], "prompt": prompt, "response": response}
-            )
-        conversation_log.append(turn_log)
-        print("\n")
-
-    # Summarize results
-    print("--- Simulation Summary ---")
-    for turn_log in conversation_log:
-        print(f"Turn {turn_log['turn']}:")
-        for interaction in turn_log["interactions"]:
-            print(f"{interaction['agent']} -> {interaction['response']}")
-    print(f"Total token usage: {token_usage}")
+    profiles = load_profiles(args.profiles)
+    min_size, max_size = parse_team_size(args.team_size)
+    config = SimulationConfig(
+        runs=args.runs,
+        min_team_size=min_size,
+        max_team_size=max_size,
+        seed=args.seed,
+    )
+    simulator = HackathonSimulator(profiles, config=config)
+    summary = simulator.run()
+    print_summary(summary)
+    if args.json_out:
+        ensure_parent_dir(args.json_out)
+        with open(args.json_out, "w", encoding="utf-8") as handle:
+            json.dump(summary_to_dict(summary), handle, indent=2)
+    if args.markdown_out:
+        ensure_parent_dir(args.markdown_out)
+        with open(args.markdown_out, "w", encoding="utf-8") as handle:
+            handle.write(summary_to_markdown(summary))
 
 
-# Run the simulation
-simulate_hackathon(agents, turns=5)
+if __name__ == "__main__":
+    main()
