@@ -10,7 +10,7 @@ from .models import (
     TeamResult,
 )
 from .profiles import load_profiles
-from .utils import ensure_parent_dir, parse_team_size
+from .utils import ensure_parent_dir
 
 __all__ = [
     "HackathonSimulator",
@@ -26,5 +26,4 @@ __all__ = [
     "TeamResult",
     "load_profiles",
     "ensure_parent_dir",
-    "parse_team_size",
 ]

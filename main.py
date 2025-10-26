@@ -8,7 +8,6 @@ from hackathon_simulation import (
     SimulationConfig,
     ensure_parent_dir,
     load_profiles,
-    parse_team_size,
     print_summary,
     summary_to_dict,
     summary_to_markdown,
@@ -20,17 +19,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profiles", type=str, required=True, help="Path to participant profile JSON.")
     parser.add_argument("--runs", type=int, default=5, help="Number of simulation runs to execute.")
     parser.add_argument("--seed", type=int, default=42, help="Base random seed.")
-    parser.add_argument(
-        "--team-size",
-        type=str,
-        default="2-4",
-        help="Desired team size range, e.g., '2-4'.",
-    )
     parser.add_argument("--json-out", type=str, default=None, help="Optional path to write summary JSON.")
     parser.add_argument("--markdown-out", type=str, default=None, help="Optional path to write summary Markdown.")
-    parser.add_argument("--llm-model", type=str, default="gemini-1.5-flash", help="LLM model id.")
+    parser.add_argument("--llm-model", type=str, default="gemini-flash-latest", help="LLM model id.")
     parser.add_argument("--llm-temperature", type=float, default=0.9, help="Sampling temperature for LLM output.")
-    parser.add_argument("--llm-call-cap", type=int, default=500, help="Maximum LLM calls per simulation run.")
+    parser.add_argument("--llm-call-cap", type=int, default=10, help="Maximum LLM calls per simulation run.")
+    parser.add_argument("--rounds", type=int, default=6, help="Conversation rounds per run.")
     return parser
 
 
@@ -42,15 +36,13 @@ def main() -> None:
         profiles = load_profiles(args.profiles)
     except Exception as exc:
         raise SystemExit(f"Failed to load profiles: {exc}")
-    min_size, max_size = parse_team_size(args.team_size)
     config = SimulationConfig(
         runs=args.runs,
-        min_team_size=min_size,
-        max_team_size=max_size,
         seed=args.seed,
         llm_model=args.llm_model,
         llm_temperature=args.llm_temperature,
         llm_call_cap=args.llm_call_cap,
+        conversation_rounds=args.rounds,
     )
     simulator = HackathonSimulator(profiles, config=config)
     summary = simulator.run()

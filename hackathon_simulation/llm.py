@@ -45,21 +45,25 @@ class LLMResponder:
         phase: str,
         metrics: Optional[Dict[str, float]] = None,
         scores: Optional[Dict[str, float]] = None,
+        prompt_override: Optional[str] = None,
     ) -> str:
         if self.remaining_calls == 0:
             raise RuntimeError("LLM call cap reached for this simulation.")
         member_lines = ", ".join(f"{member.name} ({member.role})" for member in team)
-        prompt = (
-            "You are moderating a hackathon sprint. "
-            "Produce one concise insight (<=3 sentences) that reflects what this team likely says next. "
-            "Focus on critique, next steps, or validation pressure.\n\n"
-            f"Phase: {phase}\n"
-            f"Team: {member_lines}\n"
-            f"Idea: {idea}\n"
-            f"Metrics: {_pretty(metrics)}\n"
-            f"Scores: {_pretty(scores)}\n"
-            "Insight:"
-        )
+        if prompt_override:
+            prompt = prompt_override
+        else:
+            prompt = (
+                "You are moderating a hackathon sprint. "
+                "Produce one concise insight (<=3 sentences) that reflects what this team likely says next. "
+                "Focus on critique, next steps, or validation pressure.\n\n"
+                f"Phase: {phase}\n"
+                f"Team: {member_lines}\n"
+                f"Idea: {idea}\n"
+                f"Metrics: {_pretty(metrics)}\n"
+                f"Scores: {_pretty(scores)}\n"
+                "Insight:"
+            )
         contents = [
             types.Content(
                 role="user",

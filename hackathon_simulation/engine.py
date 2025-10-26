@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import random
 import statistics
 from collections import Counter, defaultdict
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from dataclasses import dataclass, field
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .llm import build_responder
 from .models import (
@@ -16,75 +18,310 @@ from .models import (
 )
 
 
+@dataclass
+class AgentState:
+    profile: AgentProfile
+    idea: str
+    origin_idea: str
+    collaborators: set[str] = field(default_factory=set)
+    history: List[str] = field(default_factory=list)
+    commitment: float = 0.4
+    energy: float = 0.6
+    research_done: bool = False
+
+
 class HackathonSimulator:
     def __init__(self, profiles: Sequence[AgentProfile], config: SimulationConfig | None = None):
         if not profiles:
             raise ValueError("At least one agent profile is required.")
         self.profiles = list(profiles)
         self.config = config or SimulationConfig()
-        self.llm = build_responder(self.config)
+        self.llm = None
+        self.progress_hook: Optional[Callable[[str], None]] = None
+        self._current_run_idx = 0
+
+    def set_progress_hook(self, hook: Optional[Callable[[str], None]]) -> None:
+        self.progress_hook = hook
+
+    def _emit(self, message: str) -> None:
+        if self.progress_hook:
+            self.progress_hook(message)
+        else:
+            print(message)
 
     def run(self) -> SimulationSummary:
-        rng = random.Random(self.config.seed)
+        master_rng = random.Random(self.config.seed)
         runs: List[SimulationRunResult] = []
+        halt_reason: Optional[Tuple[int, str]] = None
+
         for run_idx in range(1, self.config.runs + 1):
-            run_seed = rng.randint(0, 10_000)
+            run_seed = master_rng.randint(0, 10_000)
             run_rng = random.Random(run_seed)
-            teams = self._form_teams(self.profiles, run_rng)
-            if run_idx == 1:
-                print(f"[run {run_idx}] formed {len(teams)} teams — kicking off rounds…")
-            results = [self._simulate_team(team, run_rng) for team in teams]
-            results.sort(key=lambda t: t.total_score, reverse=True)
-            for rank, team in enumerate(results, start=1):
-                team.run_rank = rank
-                if self.config.progress_interval and rank % self.config.progress_interval == 0:
-                    print(
-                        f"  · team {rank} ({team.team_name}) locked idea: {team.final_idea[:80]}… "
-                        f"score {team.total_score:.2f}"
-                    )
-            print(f"[run {run_idx}] complete — top score {results[0].total_score:.2f}")
-            runs.append(SimulationRunResult(run_index=run_idx, seed=run_seed, teams=results))
+            self.llm = build_responder(self.config)
+            self._current_run_idx = run_idx
+            run_summary, reason = self._simulate_single_run(run_idx, run_seed, run_rng)
+            runs.append(run_summary)
+            if reason:
+                halt_reason = (run_idx, reason)
+                break
+
         leaderboard = self._aggregate_runs(runs)
-        return SimulationSummary(runs=runs, leaderboard=leaderboard)
+        if halt_reason:
+            _, reason = halt_reason
+            leaderboard.insert(
+                0,
+                AggregatedIdea(
+                    slug="early-stop",
+                    idea_name=f"Simulation halted early: {reason}",
+                    appearances=0,
+                    avg_score=0.0,
+                    wins=0,
+                    best_team="",
+                    best_run=0,
+                    best_reason="",
+                    sample_plan=[],
+                ),
+            )
+        return SimulationSummary(runs=runs, leaderboard=leaderboard[:8])
 
-    def _form_teams(self, profiles: Sequence[AgentProfile], rng: random.Random) -> List[List[AgentProfile]]:
-        pool = profiles[:]
-        rng.shuffle(pool)
-        teams: List[List[AgentProfile]] = []
-        used = set()
-        while pool:
-            captain = pool.pop()
-            if captain.name in used:
-                continue
-            team = [captain]
-            used.add(captain.name)
-            desired_size = rng.randint(self.config.min_team_size, self.config.max_team_size)
-            candidates = self._rank_candidates(team, pool, used)
-            while len(team) < desired_size and candidates:
-                _, pick = candidates.pop(0)
-                if pick.name in used:
-                    continue
-                used.add(pick.name)
-                team.append(pick)
-                if len(team) < desired_size:
-                    candidates = self._rank_candidates(team, pool, used)
-            teams.append(team)
-        return teams
-
-    def _rank_candidates(
+    def _simulate_single_run(
         self,
-        current_team: Sequence[AgentProfile],
-        pool: Sequence[AgentProfile],
-        used: Iterable[str],
-    ) -> List[Tuple[float, AgentProfile]]:
-        scores: List[Tuple[float, AgentProfile]] = []
-        for candidate in pool:
-            if candidate.name in used:
+        run_idx: int,
+        run_seed: int,
+        rng: random.Random,
+    ) -> Tuple[SimulationRunResult, Optional[str]]:
+        states = self._initialise_states()
+        interactions: List[str] = []
+
+        for round_idx in range(1, self.config.conversation_rounds + 1):
+            groups = self._plan_conversations(states, rng)
+            self._emit(f"[run {run_idx} · round {round_idx}] {len(groups)} conversation groups queued.")
+            for group in groups:
+                try:
+                    recap = self._facilitate_conversation(round_idx, group, rng)
+                    interactions.append(recap)
+                except RuntimeError as exc:
+                    message = str(exc)
+                    if "LLM call cap reached" in message or "Gemini call failed" in message:
+                        self._emit(f"[run {run_idx} · round {round_idx}] stopping early → {message}")
+                        run_summary, _ = self._summarise(states, interactions, rng, run_idx, run_seed, halted=True, reason=message)
+                        return run_summary, message
+                    raise
+                if self.llm.remaining_calls == 0:
+                    reason = "LLM call cap reached for this simulation."
+                    self._emit(f"[run {run_idx} · round {round_idx}] stopping early → {reason}")
+                    run_summary, _ = self._summarise(states, interactions, rng, run_idx, run_seed, halted=True, reason=reason)
+                    return run_summary, reason
+            self._apply_reflection(states, rng)
+
+        self._emit(f"[run {run_idx}] completed planned conversation rounds.")
+        run_summary, _ = self._summarise(states, interactions, rng, run_idx, run_seed, halted=False, reason="")
+        return run_summary, None
+
+    def _initialise_states(self) -> List[AgentState]:
+        return [
+            AgentState(
+                profile=agent,
+                idea=agent.idea,
+                origin_idea=agent.idea,
+                commitment=0.45 if agent.xp_level == "senior" else 0.35,
+                energy=0.6 + (0.05 * idx),
+            )
+            for idx, agent in enumerate(self.profiles)
+        ]
+
+    def _plan_conversations(self, states: List[AgentState], rng: random.Random) -> List[List[AgentState]]:
+        available = states[:]
+        rng.shuffle(available)
+        scheduled: List[List[AgentState]] = []
+        engaged: set[str] = set()
+
+        for state in available:
+            if state.profile.name in engaged:
                 continue
-            affinity = sum(self._compatibility_score(member, candidate) for member in current_team) / len(current_team)
-            scores.append((affinity, candidate))
-        scores.sort(key=lambda item: item[0], reverse=True)
-        return scores
+            engaged.add(state.profile.name)
+            candidates = [
+                (self._compatibility_score(state.profile, other.profile), other)
+                for other in available
+                if other.profile.name not in engaged and other.profile.name != state.profile.name
+            ]
+            candidates.sort(key=lambda item: item[0], reverse=True)
+            group = [state]
+            if candidates:
+                group.append(candidates[0][1])
+                engaged.add(candidates[0][1].profile.name)
+                if len(candidates) > 1 and rng.random() < 0.35:
+                    group.append(candidates[1][1])
+                    engaged.add(candidates[1][1].profile.name)
+            scheduled.append(group)
+        return scheduled
+
+    def _facilitate_conversation(
+        self,
+        round_idx: int,
+        group: List[AgentState],
+        rng: random.Random,
+    ) -> str:
+        context_lines = [
+            f"- {state.profile.name} ({state.profile.role}) idea: {state.idea}"
+            for state in group
+        ]
+        prompt = (
+            f"You are moderating round {round_idx} of a hackathon ideation sprint.\n"
+            f"Participants:\n" + "\n".join(context_lines) + "\n\n"
+            "Respond with JSON containing keys:\n"
+            "\"conversation_summary\": string,\n"
+            "\"consensus_idea\": string,\n"
+            "\"should_collaborate\": boolean,\n"
+            "\"recommended_actions\": array of strings.\n"
+            "Keep the summary concise but specific."
+        )
+
+        response_text = self.llm.generate_team_update(
+            [state.profile for state in group],
+            idea=" | ".join(state.idea for state in group),
+            phase=f"round {round_idx}",
+            prompt_override=prompt,
+        )
+        data = self._parse_conversation_response(response_text)
+        summary = data["conversation_summary"]
+        consensus = data["consensus_idea"] or self._merge_group_ideas([state.idea for state in group])
+        recommended = data["recommended_actions"]
+        should_collaborate = data["should_collaborate"]
+
+        compat = self._group_compatibility(group)
+        collab_probability = 0.2 + (compat * 0.6) + (sum(state.commitment for state in group) / len(group) * 0.2)
+        collaborate = should_collaborate or (rng.random() < collab_probability)
+
+        for state in group:
+            state.history.append(f"Round {round_idx}: {summary}")
+            for action in recommended:
+                state.history.append(f"→ Action: {action}")
+            state.energy = min(1.0, state.energy + 0.05)
+            if collaborate:
+                state.collaborators.update(s.profile.name for s in group if s.profile.name != state.profile.name)
+
+        if collaborate:
+            for state in group:
+                state.idea = consensus
+                state.commitment = min(1.0, state.commitment + 0.2)
+        else:
+            for state in group:
+                state.commitment = max(0.1, state.commitment - 0.05)
+
+        self._emit(
+            f"[run {self._current_run_idx} · round {round_idx}] {'🤝' if collaborate else '💬'} "
+            f"{', '.join(s.profile.name for s in group)} — {summary}"
+        )
+        return summary
+
+    def _apply_reflection(self, states: List[AgentState], rng: random.Random) -> None:
+        for state in states:
+            if state.research_done:
+                continue
+            if rng.random() < 0.2 + (state.commitment * 0.2):
+                state.research_done = True
+                state.history.append("↻ Conducted quick user research and gathered validation.")
+
+    def _summarise(
+        self,
+        states: List[AgentState],
+        interactions: List[str],
+        rng: random.Random,
+        run_idx: int,
+        run_seed: int,
+        halted: bool,
+        reason: str,
+    ) -> Tuple[SimulationRunResult, Optional[str]]:
+        clusters = self._derive_clusters(states)
+        results: List[TeamResult] = []
+        for cluster_states in clusters:
+            profiles = [state.profile for state in cluster_states]
+            idea = cluster_states[0].idea
+            metrics = self._assess_idea_for_group(idea, cluster_states, rng)
+            score_breakdown = self._score_outcome(
+                metrics,
+                cohesion=self._cluster_cohesion(cluster_states),
+                energy=sum(state.energy for state in cluster_states) / len(cluster_states),
+                research_done=any(state.research_done for state in cluster_states),
+                rng=rng,
+            )
+            total_score = sum(score_breakdown.values())
+            team_result = TeamResult(
+                team_name=self._generate_cluster_name(cluster_states, rng),
+                members=[state.profile.name for state in cluster_states],
+                final_idea=idea,
+                idea_origin=cluster_states[0].origin_idea,
+                pivoted=any(state.idea != state.origin_idea for state in cluster_states),
+                research_done=any(state.research_done for state in cluster_states),
+                conversation_log=self._cluster_conversation_log(cluster_states),
+                score_breakdown=score_breakdown,
+                total_score=total_score,
+                six_hour_plan=self._build_six_hour_plan(idea, profiles, metrics, rng),
+            )
+            results.append(team_result)
+
+        results.sort(key=lambda t: t.total_score, reverse=True)
+        for idx, team in enumerate(results, start=1):
+            team.run_rank = idx
+
+        run_summary = SimulationRunResult(run_index=run_idx, seed=run_seed, teams=results)
+        return run_summary, (reason if halted else None)
+
+    def _derive_clusters(self, states: List[AgentState]) -> List[List[AgentState]]:
+        buckets: Dict[str, List[AgentState]] = defaultdict(list)
+        for state in states:
+            key = self._slugify(state.idea)
+            buckets[key].append(state)
+        return list(buckets.values())
+
+    def _cluster_conversation_log(self, states: List[AgentState]) -> List[str]:
+        logs: List[str] = []
+        for state in states:
+            logs.extend(state.history)
+        seen = set()
+        unique_logs = []
+        for entry in logs:
+            if entry not in seen:
+                seen.add(entry)
+                unique_logs.append(entry)
+        return unique_logs[:30]
+
+    def _cluster_cohesion(self, states: List[AgentState]) -> float:
+        tokens = [token for state in states for token in self._tokenize(state.profile.personality)]
+        counts = Counter(tokens)
+        dominant = counts.most_common(1)[0][1] if counts else 1
+        cohesion = dominant / max(len(states), 1)
+        xp_levels = Counter(state.profile.xp_level for state in states)
+        if len(xp_levels) > 1:
+            cohesion += 0.1
+        return min(cohesion, 1.2)
+
+    def _generate_cluster_name(self, states: List[AgentState], rng: random.Random) -> str:
+        anchors = [state.profile.role.split()[0] for state in states]
+        adjectives = ["Signal", "Catalyst", "Momentum", "Insight", "Pulse", "Vector", "Fusion", "Orbit", "Sprint", "Arc"]
+        nouns = ["Circle", "Crew", "Collective", "Guild", "Forum", "Loop", "Bridge", "Pod", "Squad", "Guild"]
+        return f"{rng.choice(adjectives)} {rng.choice(nouns)} ({'-'.join(sorted(set(anchors)))})"
+
+    def _parse_conversation_response(self, text: str) -> Dict[str, object]:
+        try:
+            start = text.index("{")
+            end = text.rindex("}") + 1
+            payload = json.loads(text[start:end])
+        except Exception:
+            payload = {}
+        summary = payload.get("conversation_summary") if isinstance(payload, dict) else None
+        consensus = payload.get("consensus_idea") if isinstance(payload, dict) else None
+        should_collab = payload.get("should_collaborate") if isinstance(payload, dict) else False
+        recommendations = payload.get("recommended_actions") if isinstance(payload, dict) else []
+        if not isinstance(recommendations, list):
+            recommendations = [str(recommendations)]
+        return {
+            "conversation_summary": summary or text.strip(),
+            "consensus_idea": consensus or "",
+            "should_collaborate": bool(should_collab),
+            "recommended_actions": [str(item) for item in recommendations if str(item).strip()],
+        }
 
     def _compatibility_score(self, a: AgentProfile, b: AgentProfile) -> float:
         overlap = len(set(a.skills) & set(b.skills))
@@ -95,7 +332,7 @@ class HackathonSimulator:
         return (overlap * 0.6) + (diversity * 0.9) + personality + alignment + xp_bonus
 
     def _personality_affinity(self, a: str, b: str) -> float:
-        weights = {
+        keywords = {
             "visionary": 1.2,
             "facilitator": 1.0,
             "analytical": 0.9,
@@ -132,9 +369,9 @@ class HackathonSimulator:
         for ta in tokens_a:
             for tb in tokens_b:
                 if ta == tb:
-                    affinity += 1.1 * weights.get(ta, 0.5)
-                elif ta in weights and tb in weights:
-                    affinity += 0.2 * (weights[ta] + weights[tb]) / 2
+                    affinity += 1.1 * keywords.get(ta, 0.5)
+                elif ta in keywords and tb in keywords:
+                    affinity += 0.2 * (keywords[ta] + keywords[tb]) / 2
         return affinity
 
     def _idea_alignment(self, a: str, b: str) -> float:
@@ -148,145 +385,6 @@ class HackathonSimulator:
         jaccard = overlap / len(tokens_a | tokens_b)
         return 1.0 + (jaccard * 1.5)
 
-    def _simulate_team(self, team: List[AgentProfile], rng: random.Random) -> TeamResult:
-        name = self._generate_team_name(team, rng)
-        candidates = [
-            (member, member.idea, self._assess_idea_for_team(member.idea, team, rng)) for member in team
-        ]
-        candidates.sort(key=lambda item: item[2]["composite"], reverse=True)
-        primary_owner, working_idea, metrics = candidates[0]
-        log = [
-            f"Team pairs around {primary_owner.name}'s concept after scoring highest on feasibility ({metrics['feasibility']:.2f}) and novelty ({metrics['novelty']:.2f})."
-        ]
-        alignment_note = self._llm_insight(
-            team=team,
-            idea=working_idea,
-            phase="team alignment",
-            metrics=metrics,
-        )
-        if alignment_note:
-            log.append(f"LLM insight: {alignment_note}")
-        if len(candidates) > 1 and rng.random() < 0.55:
-            merger = candidates[1]
-            working_idea = self._merge_ideas(working_idea, merger[1])
-            metrics = self._assess_idea_for_team(working_idea, team, rng)
-            log.append(
-                f"They blend in elements from {merger[0].name}'s pitch to improve user pull ({metrics['user_value']:.2f})."
-            )
-            merge_note = self._llm_insight(
-                team=team,
-                idea=working_idea,
-                phase="idea blending",
-                metrics=metrics,
-            )
-            if merge_note:
-                log.append(f"LLM insight: {merge_note}")
-        cohesion = self._team_cohesion(team)
-        energy = self._social_energy(team)
-        critique_push = rng.uniform(0.8, 1.2) + (energy * 0.05)
-        metrics["clarity"] *= critique_push
-        log.append(f"Critique round boosts clarity to {metrics['clarity']:.2f} thanks to high social energy ({energy:.2f}).")
-        critique_note = self._llm_insight(
-            team=team,
-            idea=working_idea,
-            phase="post-critique",
-            metrics=metrics,
-        )
-        if critique_note:
-            log.append(f"LLM insight: {critique_note}")
-        pressure = self._pivot_pressure(team, metrics)
-        pivoted = False
-        if rng.random() < pressure:
-            pivoted = True
-            log.append("Pivot pressure spikes; team reframes the concept to de-risk execution.")
-            working_idea = self._generate_pivot(working_idea, team, rng)
-            metrics = self._assess_idea_for_team(working_idea, team, rng)
-            log.append(
-                f"After pivot, feasibility {metrics['feasibility']:.2f} and novelty {metrics['novelty']:.2f} rebalance."
-            )
-            pivot_note = self._llm_insight(
-                team=team,
-                idea=working_idea,
-                phase="post-pivot",
-                metrics=metrics,
-            )
-            if pivot_note:
-                log.append(f"LLM insight: {pivot_note}")
-        research_done = rng.random() < (self.config.research_trigger + cohesion * 0.05)
-        if research_done:
-            metrics["user_value"] *= 1.15
-            metrics["clarity"] *= 1.1
-            log.append("They squeeze in lightweight user research, validating assumptions and sharpening messaging.")
-            research_note = self._llm_insight(
-                team=team,
-                idea=working_idea,
-                phase="post-research",
-                metrics=metrics,
-            )
-            if research_note:
-                log.append(f"LLM insight: {research_note}")
-        score_breakdown = self._score_outcome(metrics, cohesion, energy, research_done, rng)
-        total_score = sum(score_breakdown.values())
-        plan = self._build_six_hour_plan(working_idea, team, metrics, rng)
-        llm_note = self._llm_insight(
-            team=team,
-            idea=working_idea,
-            phase="post-evaluation",
-            metrics=metrics,
-            scores=score_breakdown,
-        )
-        if llm_note:
-            log.append(f"LLM insight: {llm_note}")
-        return TeamResult(
-            team_name=name,
-            members=[member.name for member in team],
-            final_idea=working_idea,
-            idea_origin=primary_owner.name,
-            pivoted=pivoted,
-            research_done=research_done,
-            conversation_log=log,
-            score_breakdown=score_breakdown,
-            total_score=total_score,
-            six_hour_plan=plan,
-        )
-
-    def _assess_idea_for_team(
-        self,
-        idea: str,
-        team: List[AgentProfile],
-        rng: random.Random,
-    ) -> Dict[str, float]:
-        tokens = self._tokenize(idea)
-        skills = set(skill for member in team for skill in member.skills)
-        buzz = {"ai", "agent", "automation", "realtime", "predictive", "dynamic"}
-        defensibility_terms = {"platform", "loop", "dashboard", "engine", "simulator", "monitor"}
-        user_words = {"founder", "team", "user", "customer", "judge", "product"}
-        novelty = 0.6 + (len(tokens & buzz) * 0.2) + rng.uniform(-0.05, 0.1)
-        feasibility = 0.7 + (len(skills) / 20) + rng.uniform(-0.05, 0.05)
-        user_value = 0.55 + (len(tokens & user_words) * 0.15) + rng.uniform(-0.05, 0.1)
-        clarity = 0.5 + (min(len(idea), 200) / 400) + rng.uniform(-0.05, 0.1)
-        defensibility = 0.4 + (len(tokens & defensibility_terms) * 0.12)
-        novelty = min(novelty, 1.2)
-        feasibility = min(feasibility, 1.15)
-        user_value = min(user_value, 1.2)
-        clarity = min(clarity, 1.1)
-        defensibility = min(defensibility, 1.0)
-        composite = (
-            (novelty * 0.25)
-            + (feasibility * 0.25)
-            + (user_value * 0.2)
-            + (clarity * 0.15)
-            + (defensibility * 0.15)
-        )
-        return {
-            "novelty": novelty,
-            "feasibility": feasibility,
-            "user_value": user_value,
-            "clarity": clarity,
-            "defensibility": defensibility,
-            "composite": composite,
-        }
-
     def _merge_ideas(self, idea_a: str, idea_b: str) -> str:
         tokens_a = list(self._tokenize(idea_a))
         tokens_b = list(self._tokenize(idea_b))
@@ -298,51 +396,70 @@ class HackathonSimulator:
         addition = idea_b.split(".")[0]
         return f"{base} Now enriched with {addition.lower()} to create a {stitched} play."
 
-    def _team_cohesion(self, team: List[AgentProfile]) -> float:
-        tokens = [token for member in team for token in self._tokenize(member.personality)]
-        counts = Counter(tokens)
-        dominant = counts.most_common(1)[0][1] if counts else 1
-        cohesion = dominant / max(len(team), 1)
-        xp_levels = Counter(member.xp_level for member in team)
-        if len(xp_levels) > 1:
-            cohesion += 0.1
-        return min(cohesion, 1.2)
+    def _merge_group_ideas(self, ideas: List[str]) -> str:
+        merged = ideas[0]
+        for idea in ideas[1:]:
+            merged = self._merge_ideas(merged, idea)
+        return merged
 
-    def _social_energy(self, team: List[AgentProfile]) -> float:
-        energy_words = {"energetic", "spark", "enthusiastic", "catalyst", "bold", "visionary"}
-        calm_words = {"calm", "focused", "analytical", "detail"}
-        score = 0.6
-        for member in team:
-            tokens = self._tokenize(member.personality)
-            if tokens & energy_words:
-                score += 0.15
-            if tokens & calm_words:
-                score -= 0.05
-        score += len(team) * 0.03
-        return max(0.4, min(score, 1.3))
+    def _group_compatibility(self, group: List[AgentState]) -> float:
+        if len(group) == 1:
+            return 0.5
+        scores = []
+        for i in range(len(group)):
+            for j in range(i + 1, len(group)):
+                scores.append(self._compatibility_score(group[i].profile, group[j].profile))
+        return sum(scores) / len(scores)
 
-    def _pivot_pressure(self, team: List[AgentProfile], metrics: Dict[str, float]) -> float:
-        tokens = [self._tokenize(member.personality) for member in team]
-        ambition = sum(1 for t in tokens if "visionary" in t or "bold" in t)
-        caution = sum(1 for t in tokens if "detail" in t or "calm" in t or "principled" in t)
-        pressure = self.config.pivot_base_chance + (ambition * 0.08) - (caution * 0.05)
-        if metrics["novelty"] < 0.7:
-            pressure += 0.1
-        if metrics["feasibility"] < 0.6:
-            pressure += 0.07
-        return max(0.05, min(pressure, 0.8))
+    def _assess_idea_for_group(
+        self,
+        idea: str,
+        states: List[AgentState],
+        rng: random.Random,
+    ) -> Dict[str, float]:
+        profiles = [state.profile for state in states]
+        return self._assess_idea_for_team(idea, profiles, rng)
 
-    def _generate_pivot(self, idea: str, team: List[AgentProfile], rng: random.Random) -> str:
-        focus = rng.choice(
-            ["user research", "developers", "judges", "growth loops", "team health", "ethics guardrails"]
+    def _assess_idea_for_team(
+        self,
+        idea: str,
+        team: List[AgentProfile],
+        rng: random.Random,
+    ) -> Dict[str, float]:
+        tokens = self._tokenize(idea)
+        skill_pool = set(skill for member in team for skill in member.skills)
+        buzz = {"ai", "agent", "automation", "realtime", "predictive", "dynamic"}
+        defensibility_terms = {"platform", "loop", "dashboard", "engine", "simulator", "monitor"}
+        user_words = {"founder", "team", "user", "customer", "judge", "product"}
+
+        novelty = 0.6 + (len(tokens & buzz) * 0.2) + rng.uniform(-0.05, 0.1)
+        feasibility = 0.7 + (len(skill_pool) / 20) + rng.uniform(-0.05, 0.05)
+        user_value = 0.55 + (len(tokens & user_words) * 0.15) + rng.uniform(-0.05, 0.1)
+        clarity = 0.5 + (min(len(idea), 200) / 400) + rng.uniform(-0.05, 0.1)
+        defensibility = 0.4 + (len(tokens & defensibility_terms) * 0.12)
+
+        novelty = min(novelty, 1.2)
+        feasibility = min(feasibility, 1.15)
+        user_value = min(user_value, 1.2)
+        clarity = min(clarity, 1.1)
+        defensibility = min(defensibility, 1.0)
+
+        composite = (
+            (novelty * 0.25)
+            + (feasibility * 0.25)
+            + (user_value * 0.2)
+            + (clarity * 0.15)
+            + (defensibility * 0.15)
         )
-        style = rng.choice(["lightweight", "data-backed", "real-time", "narrative-driven", "automated"])
-        dominant_skill = Counter(skill for member in team for skill in member.skills).most_common(1)
-        skill_focus = dominant_skill[0][0].replace("_", " ") if dominant_skill else "multi-disciplinary"
-        return (
-            f"{idea.split('.')[0]}. Pivoted toward a {style} toolkit for {focus} "
-            f"that leans on the team's {skill_focus} strength."
-        )
+
+        return {
+            "novelty": novelty,
+            "feasibility": feasibility,
+            "user_value": user_value,
+            "clarity": clarity,
+            "defensibility": defensibility,
+            "composite": composite,
+        }
 
     def _score_outcome(
         self,
@@ -432,46 +549,5 @@ class HackathonSimulator:
         cleaned = "".join(ch.lower() if ch.isalnum() else " " for ch in text)
         return {token for token in cleaned.split() if token}
 
-    def _generate_team_name(self, team: List[AgentProfile], rng: random.Random) -> str:
-        adjectives = [
-            "Signal",
-            "Catalyst",
-            "Momentum",
-            "Insight",
-            "Pulse",
-            "Vector",
-            "Fusion",
-            "Orbit",
-            "Sprint",
-            "Arc",
-        ]
-        nouns = [
-            "Builders",
-            "Weavers",
-            "Operators",
-            "Synthesizers",
-            "Architects",
-            "Explorers",
-            "Analysts",
-            "Navigators",
-            "Allies",
-            "Conduits",
-        ]
-        token = rng.choice(adjectives)
-        roles = "-".join(sorted({member.role.split()[0] for member in team}))
-        return f"Team {token} {rng.choice(nouns)} ({roles})"
-
     def _slugify(self, text: str) -> str:
         return "".join(ch.lower() if ch.isalnum() else "-" for ch in text).strip("-")
-
-    def _llm_insight(
-        self,
-        team: List[AgentProfile],
-        idea: str,
-        phase: str,
-        metrics: Optional[Dict[str, float]] = None,
-        scores: Optional[Dict[str, float]] = None,
-    ) -> str:
-        if not self.llm:
-            raise RuntimeError("LLM responder not configured. Provide Gemini credentials to run simulations.")
-        return self.llm.generate_team_update(team, idea, phase, metrics, scores)

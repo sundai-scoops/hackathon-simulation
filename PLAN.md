@@ -5,7 +5,8 @@
 - **Plan tracker** — ✅ `PLAN.md` now doubles as the project log.
 - **Modular core** — ✅ Simulation engine moved into `hackathon_simulation/` for reuse.
 - **UI & exports** — ✅ Streamlit and CLI share the same summary/serialization helpers.
-- **LLM insights** — ✅ Gemini hooks land multi-phase narrative riffs when keys are present (default on, capped @ 500 calls).
+- **LLM insights** — ✅ Gemini hooks land multi-phase narrative riffs when keys are present (default on, capped @ 10 calls, throttled).
+- **Conversation engine** — ✅ Agents chat first, form clusters organically, and hard-stop once the call budget is exhausted.
 - **Roster input** — ✅ No more sample agents; UI/CLI require explicit name/role/idea lists.
 
 ### Next Moves

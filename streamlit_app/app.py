@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import csv
 import json
 import os
 import sys
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 import streamlit as st
 
@@ -67,6 +68,40 @@ def build_profiles(count: int) -> List[AgentProfile]:
     return profiles
 
 
+def parse_table_input(raw: str) -> Optional[List[List[str]]]:
+    stripped = raw.strip()
+    if not stripped:
+        return None
+    lines = [line for line in stripped.splitlines() if line.strip()]
+    sample = "\n".join(lines[:5])
+    delimiter = "\t"
+    try:
+        sniffer = csv.Sniffer()
+        dialect = sniffer.sniff(sample, delimiters=",\t;")
+        delimiter = dialect.delimiter
+    except csv.Error:
+        if "," in sample:
+            delimiter = ","
+    reader = csv.reader(lines, delimiter=delimiter)
+    rows: List[List[str]] = []
+    for row in reader:
+        cells = [cell.strip() for cell in row]
+        if not any(cells):
+            continue
+        rows.append(cells)
+    if not rows:
+        return None
+    header = [cell.lower() for cell in rows[0]]
+    if any(label in header for label in ("name", "role", "idea")):
+        rows = rows[1:]
+    cleaned: List[List[str]] = []
+    for row in rows:
+        if len(row) < 3:
+            continue
+        cleaned.append(row[:3])
+    return cleaned or None
+
+
 def render_conversation(logs: Iterable[str]) -> None:
     for entry in logs:
         st.markdown(f"- {entry}")
@@ -100,7 +135,8 @@ def main() -> None:
 
         st.subheader("Simulation")
         runs = st.slider("Runs", min_value=1, max_value=10, value=3)
-        team_range = st.slider("Team size range", min_value=1, max_value=6, value=(2, 4))
+        team_range = (2, 4)
+        conversation_rounds = st.slider("Conversation rounds", min_value=1, max_value=12, value=6)
         seed = st.number_input("Base seed", min_value=0, max_value=10_000, value=42, step=1)
 
         st.subheader("LLM")
@@ -113,6 +149,24 @@ def main() -> None:
 
     st.subheader("Participant Roster")
     st.write("Provide each person's name, role, and headline idea. The simulation uses this roster verbatim.")
+    table_input = st.text_area(
+        "Paste table (Name | Role | Idea) — supports CSV/TSV",
+        value="",
+        height=120,
+        placeholder="Name\tRole\tIdea\nCasey Vega\tProduct Manager\tAgentic QA bot interviewing power users nightly\n…",
+    )
+    if st.button("Import table"):
+        parsed = parse_table_input(table_input)
+        if not parsed:
+            st.warning("Could not parse the table. Ensure it has columns for name, role, and idea.")
+        else:
+            st.session_state.agent_count = len(parsed)
+            ensure_agent_state(len(parsed))
+            for idx, (name, role, idea) in enumerate(parsed):
+                st.session_state[f"agent_name_{idx}"] = name
+                st.session_state[f"agent_role_{idx}"] = role
+                st.session_state[f"agent_idea_{idx}"] = idea
+            st.success(f"Imported {len(parsed)} participants from table input.")
     for idx in range(st.session_state.agent_count):
         st.markdown(f"**Participant {idx + 1}**")
         cols = st.columns(3)
@@ -137,8 +191,17 @@ def main() -> None:
                 llm_model=llm_model,
                 llm_temperature=llm_temperature,
                 llm_call_cap=int(llm_call_cap),
+                conversation_rounds=int(conversation_rounds),
             )
             simulator = HackathonSimulator(profiles, config=config)
+            progress_box = st.sidebar.empty()
+            progress_log: List[str] = []
+
+            def hook(message: str) -> None:
+                progress_log.append(message)
+                progress_box.write("\n".join(progress_log[-8:]))
+
+            simulator.set_progress_hook(hook)
             summary = simulator.run()
         except Exception as err:
             st.error(str(err))
