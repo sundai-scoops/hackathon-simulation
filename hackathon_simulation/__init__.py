@@ -1,5 +1,6 @@
 from .engine import HackathonSimulator
 from .exporting import print_summary, summary_to_dict, summary_to_markdown
+from .llm import build_responder
 from .models import (
     AggregatedIdea,
     AgentProfile,
@@ -13,6 +14,7 @@ from .utils import ensure_parent_dir, parse_team_size
 
 __all__ = [
     "HackathonSimulator",
+    "build_responder",
     "print_summary",
     "summary_to_dict",
     "summary_to_markdown",

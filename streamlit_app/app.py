@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Optional
+
+import os
 
 import streamlit as st
 
@@ -55,6 +57,38 @@ def load_uploaded_profiles(uploaded_file) -> List[AgentProfile]:
     return profiles
 
 
+def parse_manual_profiles(raw: str) -> Optional[List[AgentProfile]]:
+    if not raw.strip():
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Manual profile JSON invalid: {exc}") from exc
+    if not isinstance(payload, list):
+        raise ValueError("Manual profile JSON must be a list of agent objects.")
+    profiles: List[AgentProfile] = []
+    for idx, entry in enumerate(payload, start=1):
+        if not isinstance(entry, dict):
+            raise ValueError(f"Manual profile at index {idx} must be an object.")
+        try:
+            profiles.append(
+                AgentProfile(
+                    name=entry["name"],
+                    role=entry["role"],
+                    idea=entry["idea"],
+                    skills=entry.get("skills", []),
+                    personality=entry.get("personality", "Curious Collaborator"),
+                    motivation=entry.get("motivation", "Build something meaningful."),
+                    xp_level=entry.get("xp_level", "mid"),
+                )
+            )
+        except KeyError as missing:
+            raise ValueError(f"Manual profile missing required field: {missing}") from missing
+    if not profiles:
+        raise ValueError("Manual profile list cannot be empty.")
+    return profiles
+
+
 def render_conversation(logs: Iterable[str]) -> None:
     for entry in logs:
         st.markdown(f"- {entry}")
@@ -96,15 +130,45 @@ def main() -> None:
         pivot_chance = st.slider("Pivot pressure baseline", min_value=0.05, max_value=0.8, value=0.35, step=0.05)
         research_trigger = st.slider("User research trigger", min_value=0.0, max_value=1.0, value=0.45, step=0.05)
 
+        st.subheader("LLM Insights")
+        use_llm = st.checkbox("Use Gemini LLM insights", value=True)
+        if use_llm:
+            llm_model = st.text_input("LLM model", value="gemini-1.5-flash")
+            llm_temperature = st.slider("LLM temperature", min_value=0.0, max_value=1.5, value=0.9, step=0.05)
+            llm_key = st.text_input("GOOGLE_API_KEY (optional)", type="password")
+            llm_call_cap = st.number_input("Max LLM calls per simulation", min_value=0, max_value=5000, value=500, step=50)
+        else:
+            llm_model = "gemini-1.5-flash"
+            llm_temperature = 0.9
+            llm_key = ""
+            llm_call_cap = 0
+
         st.subheader("Profiles")
         uploaded_profiles = st.file_uploader("Upload profiles JSON", type=["json"])
         use_default = st.checkbox("Use built-in sample profiles", value=uploaded_profiles is None)
+        manual_profiles_text = st.text_area(
+            "Or paste profiles JSON",
+            value="",
+            height=180,
+            placeholder='[\n  {"name": "Casey Vega", "role": "Product Manager", "idea": "..."}\n]',
+        )
 
         run_simulation = st.button("Run simulation", type="primary")
 
     if run_simulation:
         try:
-            profiles = DEFAULT_PROFILES if use_default or not uploaded_profiles else load_uploaded_profiles(uploaded_profiles)
+            profiles = None
+            manual_profiles = parse_manual_profiles(manual_profiles_text)
+            if manual_profiles:
+                profiles = manual_profiles
+            elif uploaded_profiles:
+                profiles = load_uploaded_profiles(uploaded_profiles)
+            elif use_default:
+                profiles = DEFAULT_PROFILES
+            else:
+                profiles = DEFAULT_PROFILES
+            if use_llm and llm_key:
+                os.environ["GOOGLE_API_KEY"] = llm_key
             config = SimulationConfig(
                 runs=runs,
                 min_team_size=team_range[0],
@@ -112,6 +176,10 @@ def main() -> None:
                 pivot_base_chance=pivot_chance,
                 research_trigger=research_trigger,
                 seed=int(seed),
+                llm_enabled=use_llm,
+                llm_model=llm_model,
+                llm_temperature=llm_temperature,
+                llm_call_cap=int(llm_call_cap),
             )
             simulator = HackathonSimulator(profiles, config=config)
             summary = simulator.run()

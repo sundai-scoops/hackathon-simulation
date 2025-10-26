@@ -28,6 +28,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--json-out", type=str, default=None, help="Optional path to write summary JSON.")
     parser.add_argument("--markdown-out", type=str, default=None, help="Optional path to write summary Markdown.")
+    parser.add_argument("--no-llm", action="store_true", help="Disable LLM-backed insights.")
+    parser.add_argument("--llm-model", type=str, default="gemini-1.5-flash", help="LLM model id.")
+    parser.add_argument("--llm-temperature", type=float, default=0.9, help="Sampling temperature for LLM output.")
+    parser.add_argument("--llm-call-cap", type=int, default=500, help="Maximum LLM calls per simulation run.")
     return parser
 
 
@@ -42,6 +46,10 @@ def main() -> None:
         min_team_size=min_size,
         max_team_size=max_size,
         seed=args.seed,
+        llm_enabled=not args.no_llm,
+        llm_model=args.llm_model,
+        llm_temperature=args.llm_temperature,
+        llm_call_cap=args.llm_call_cap,
     )
     simulator = HackathonSimulator(profiles, config=config)
     summary = simulator.run()

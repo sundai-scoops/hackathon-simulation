@@ -3,8 +3,9 @@ from __future__ import annotations
 import random
 import statistics
 from collections import Counter, defaultdict
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
+from .llm import build_responder
 from .models import (
     AggregatedIdea,
     AgentProfile,
@@ -21,6 +22,9 @@ class HackathonSimulator:
             raise ValueError("At least one agent profile is required.")
         self.profiles = list(profiles)
         self.config = config or SimulationConfig()
+        self.llm = build_responder(self.config) if self.config.llm_enabled else None
+        self._llm_notified = False
+        self._llm_cap_notified = False
 
     def run(self) -> SimulationSummary:
         rng = random.Random(self.config.seed)
@@ -148,6 +152,14 @@ class HackathonSimulator:
         log = [
             f"Team pairs around {primary_owner.name}'s concept after scoring highest on feasibility ({metrics['feasibility']:.2f}) and novelty ({metrics['novelty']:.2f})."
         ]
+        alignment_note = self._llm_insight(
+            team=team,
+            idea=working_idea,
+            phase="team alignment",
+            metrics=metrics,
+        )
+        if alignment_note:
+            log.append(f"LLM insight: {alignment_note}")
         if len(candidates) > 1 and rng.random() < 0.55:
             merger = candidates[1]
             working_idea = self._merge_ideas(working_idea, merger[1])
@@ -155,11 +167,27 @@ class HackathonSimulator:
             log.append(
                 f"They blend in elements from {merger[0].name}'s pitch to improve user pull ({metrics['user_value']:.2f})."
             )
+            merge_note = self._llm_insight(
+                team=team,
+                idea=working_idea,
+                phase="idea blending",
+                metrics=metrics,
+            )
+            if merge_note:
+                log.append(f"LLM insight: {merge_note}")
         cohesion = self._team_cohesion(team)
         energy = self._social_energy(team)
         critique_push = rng.uniform(0.8, 1.2) + (energy * 0.05)
         metrics["clarity"] *= critique_push
         log.append(f"Critique round boosts clarity to {metrics['clarity']:.2f} thanks to high social energy ({energy:.2f}).")
+        critique_note = self._llm_insight(
+            team=team,
+            idea=working_idea,
+            phase="post-critique",
+            metrics=metrics,
+        )
+        if critique_note:
+            log.append(f"LLM insight: {critique_note}")
         pressure = self._pivot_pressure(team, metrics)
         pivoted = False
         if rng.random() < pressure:
@@ -170,14 +198,39 @@ class HackathonSimulator:
             log.append(
                 f"After pivot, feasibility {metrics['feasibility']:.2f} and novelty {metrics['novelty']:.2f} rebalance."
             )
+            pivot_note = self._llm_insight(
+                team=team,
+                idea=working_idea,
+                phase="post-pivot",
+                metrics=metrics,
+            )
+            if pivot_note:
+                log.append(f"LLM insight: {pivot_note}")
         research_done = rng.random() < (self.config.research_trigger + cohesion * 0.05)
         if research_done:
             metrics["user_value"] *= 1.15
             metrics["clarity"] *= 1.1
             log.append("They squeeze in lightweight user research, validating assumptions and sharpening messaging.")
+            research_note = self._llm_insight(
+                team=team,
+                idea=working_idea,
+                phase="post-research",
+                metrics=metrics,
+            )
+            if research_note:
+                log.append(f"LLM insight: {research_note}")
         score_breakdown = self._score_outcome(metrics, cohesion, energy, research_done, rng)
         total_score = sum(score_breakdown.values())
         plan = self._build_six_hour_plan(working_idea, team, metrics, rng)
+        llm_note = self._llm_insight(
+            team=team,
+            idea=working_idea,
+            phase="post-evaluation",
+            metrics=metrics,
+            scores=score_breakdown,
+        )
+        if llm_note:
+            log.append(f"LLM insight: {llm_note}")
         return TeamResult(
             team_name=name,
             members=[member.name for member in team],
@@ -404,3 +457,22 @@ class HackathonSimulator:
 
     def _slugify(self, text: str) -> str:
         return "".join(ch.lower() if ch.isalnum() else "-" for ch in text).strip("-")
+
+    def _llm_insight(
+        self,
+        team: List[AgentProfile],
+        idea: str,
+        phase: str,
+        metrics: Optional[Dict[str, float]] = None,
+        scores: Optional[Dict[str, float]] = None,
+    ) -> Optional[str]:
+        if not self.llm:
+            if self.config.llm_enabled and not self._llm_notified:
+                self._llm_notified = True
+                print("LLM requested but no API key found; falling back to heuristic output.")
+            return None
+        insight = self.llm.generate_team_update(team, idea, phase, metrics, scores)
+        if insight is None and self.llm.remaining_calls == 0 and not self._llm_cap_notified:
+            self._llm_cap_notified = True
+            print("LLM call cap reached; remaining phases will use heuristic narration.")
+        return insight

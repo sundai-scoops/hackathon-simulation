@@ -5,6 +5,7 @@
 - **Plan tracker** — ✅ `PLAN.md` now doubles as the project log.
 - **Modular core** — ✅ Simulation engine moved into `hackathon_simulation/` for reuse.
 - **UI & exports** — ✅ Streamlit and CLI share the same summary/serialization helpers.
+- **LLM insights** — ✅ Gemini hooks land multi-phase narrative riffs when keys are present (default on, capped @ 500 calls).
 
 ### Next Moves
 
