@@ -7,6 +7,7 @@
 - **UI & exports** — ✅ Streamlit and CLI share the same summary/serialization helpers.
 - **LLM insights** — ✅ Gemini hooks land multi-phase narrative riffs when keys are present (default on, capped @ 10 calls, throttled).
 - **Conversation engine** — ✅ Agents chat first, form clusters organically, and hard-stop once the call budget is exhausted.
+- **Roster UX** — ✅ Streamlit supports table pasting (Name | Idea | Comments) + live progress logging.
 - **Roster input** — ✅ No more sample agents; UI/CLI require explicit name/role/idea lists.
 
 ### Next Moves

@@ -26,18 +26,19 @@ This project stress-tests hackathon ideas by simulating organic conversation loo
 ### CLI options
 - `--profiles path/to/profiles.json` — required; JSON list of participants.
 - `--runs 8` and `--seed 99` — run count and deterministic base seed.
-- `--rounds 6` — conversation rounds per run.
+- `--rounds 6` — conversation rounds per run (agents talk organically within each round).
 - `--json-out results/run.json` or `--markdown-out results/summary.md` — export data for sharing.
-- `--llm-call-cap 10` — adjust the per-simulation Gemini request budget (default 10).
+- `--llm-call-cap 10` — adjust the per-simulation Gemini request budget (default 10, one call every two seconds).
 
 ### Streamlit dashboard
 ```bash
 streamlit run streamlit_app/app.py
 ```
-You’ll get controls for participant count, conversation rounds, Gemini model/budget, and base seed. Enter each participant’s name, role, and idea directly in the roster form (no defaults). The app renders:
+You’ll get controls for participant count, conversation rounds, Gemini model/budget, and base seed. Enter each participant’s name, idea, and comments directly (or import a table). The app renders:
 - Per-run breakdowns with conversations, pivots, and scoring.
 - Aggregated leaderboard with reasoning highlights.
 - Download buttons for the same JSON/Markdown exports as the CLI.
+- A live conversation feed (chat bubbles) showing how discussions unfold in real time.
 
 ### LLM-powered insights (optional)
 - Requires a Google Generative AI key (`GEMINI_API_KEY` or `GOOGLE_API_KEY`).
@@ -67,11 +68,11 @@ The CLI expects a JSON array where each entry contains at least:
 Only `name`, `role`, and `idea` are required; additional fields are optional.
 
 ### How the simulation flows
-- **Conversation rounds** *(default 6)* — every round, the simulator pairs or triads people based on idea affinity and complementary skills, then captures a Gemini-scribed recap.
+- **Conversation rounds** *(default 6)* — every round, the simulator pairs or triads people based on idea affinity and complementary skills, then captures a Gemini-scribed recap that includes candid praise, critiques, and a bit of friendly spice.
 - **Emergent clusters** — when conversations go well, participants align on a new consensus idea and become a cluster; others continue exploring solo.
 - **Hard interaction budget** — the Gemini call cap (default 10) is treated as the global interaction budget. When it runs out, the simulation stops immediately and returns the partial state.
 - **Determinism** — set `--seed` (CLI) or the “Base seed” slider (Streamlit) to replay the same conversational arc with the same roster.
-- **Table-friendly input** — In Streamlit you can paste a tabular roster (e.g., copy/paste from Google Sheets with columns `Name`, `Role`, `Idea`) and import it directly into the form.
+- **Table-friendly input** — In Streamlit you can paste a tabular roster (e.g., copy/paste from Google Sheets with columns `Idea`, `Name`, `Comments`) and import it directly into the form.
 
 ### Project layout
 - `hackathon_simulation/` — modular core (models, profiles, engine, exports, helpers).

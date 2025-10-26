@@ -31,15 +31,15 @@ def ensure_agent_state(count: int) -> None:
     if "agent_count" in st.session_state and st.session_state.agent_count != count:
         st.session_state.agent_count = count
     for idx in range(st.session_state.agent_count):
-        for field in ("name", "role", "idea"):
+        for field in ("name", "idea", "comments"):
             key = f"agent_{field}_{idx}"
             if key not in st.session_state:
                 st.session_state[key] = ""
-    tracked_prefixes = ("agent_name_", "agent_role_", "agent_idea_")
+    tracked_prefixes = ("agent_name_", "agent_role_", "agent_idea_", "agent_comments_")
     keys_to_remove = [
         key
         for key in list(st.session_state.keys())
-        if key.startswith(tracked_prefixes)
+        if key.startswith(("agent_name_", "agent_role_", "agent_idea_", "agent_comments_"))
         and int(key.split("_")[-1]) >= st.session_state.agent_count
     ]
     for key in keys_to_remove:
@@ -50,15 +50,19 @@ def build_profiles(count: int) -> List[AgentProfile]:
     profiles: List[AgentProfile] = []
     for idx in range(count):
         name = st.session_state.get(f"agent_name_{idx}", "").strip()
-        role = st.session_state.get(f"agent_role_{idx}", "").strip()
         idea = st.session_state.get(f"agent_idea_{idx}", "").strip()
-        if not name or not role or not idea:
-            raise ValueError(f"Participant {idx + 1} needs name, role, and idea.")
+        comments = st.session_state.get(f"agent_comments_{idx}", "").strip()
+        if not name:
+            raise ValueError(f"Participant {idx + 1} needs a name.")
+        if not idea and not comments:
+            raise ValueError(f"Participant {idx + 1} needs either an idea or comments.")
+        role = comments or "Contributor"
+        final_idea = idea or comments
         profiles.append(
             AgentProfile(
                 name=name,
                 role=role,
-                idea=idea,
+                idea=final_idea,
                 skills=[],
                 personality="Adaptive Collaborator",
                 motivation="Ship a standout hackathon project fast.",
@@ -72,33 +76,67 @@ def parse_table_input(raw: str) -> Optional[List[List[str]]]:
     stripped = raw.strip()
     if not stripped:
         return None
-    lines = [line for line in stripped.splitlines() if line.strip()]
-    sample = "\n".join(lines[:5])
-    delimiter = "\t"
-    try:
-        sniffer = csv.Sniffer()
-        dialect = sniffer.sniff(sample, delimiters=",\t;")
-        delimiter = dialect.delimiter
-    except csv.Error:
-        if "," in sample:
-            delimiter = ","
-    reader = csv.reader(lines, delimiter=delimiter)
-    rows: List[List[str]] = []
-    for row in reader:
-        cells = [cell.strip() for cell in row]
-        if not any(cells):
+
+    lines: List[str] = []
+    for raw_line in stripped.splitlines():
+        line = raw_line.strip()
+        if not line:
             continue
-        rows.append(cells)
-    if not rows:
+        content = line.replace("|", "").strip()
+        if not content:
+            continue
+        if set(content) <= {"-", ":", " "}:
+            continue
+        if line.startswith("|"):
+            line = line.strip("|")
+        lines.append(line)
+
+    if not lines:
         return None
-    header = [cell.lower() for cell in rows[0]]
-    if any(label in header for label in ("name", "role", "idea")):
-        rows = rows[1:]
+
+    uses_pipe = any("|" in line for line in lines)
+    delimiter = ","
+    if not uses_pipe:
+        try:
+            sample = "\n".join(lines[:5])
+            sniffer = csv.Sniffer()
+            dialect = sniffer.sniff(sample, delimiters=",;\t")
+            delimiter = dialect.delimiter
+        except csv.Error:
+            delimiter = ","
+
+    raw_rows: List[List[str]] = []
+    for line in lines:
+        if uses_pipe:
+            parts = [cell.strip() for cell in line.split("|")]
+        else:
+            reader = csv.reader([line], delimiter=delimiter, skipinitialspace=True)
+            parts = [cell.strip() for cell in next(reader, [])]
+        if not any(parts):
+            continue
+        raw_rows.append(parts)
+
+    if not raw_rows:
+        return None
+
+    header_tokens = {token.strip() for cell in raw_rows[0] for token in cell.lower().split()}
+    has_header = {"idea", "name"}.issubset(header_tokens) and ("comments" in header_tokens or "comment" in header_tokens)
+    rows = raw_rows[1:] if has_header else raw_rows
+
     cleaned: List[List[str]] = []
     for row in rows:
-        if len(row) < 3:
+        while len(row) < 3:
+            row.append("")
+        idea, name, comments = row[:3]
+        idea = idea.strip()
+        name = name.strip()
+        comments = comments.strip()
+        if not name and not idea and not comments:
             continue
-        cleaned.append(row[:3])
+        if not name:
+            continue
+        cleaned.append([name, idea, comments])
+
     return cleaned or None
 
 
@@ -148,12 +186,12 @@ def main() -> None:
         run_simulation = st.button("Run simulation", type="primary")
 
     st.subheader("Participant Roster")
-    st.write("Provide each person's name, role, and headline idea. The simulation uses this roster verbatim.")
+    st.write("Provide each idea, the owner’s name, and optional comments (at least one of idea/comments must be filled). The simulation uses this roster verbatim.")
     table_input = st.text_area(
-        "Paste table (Name | Role | Idea) — supports CSV/TSV",
+        "Paste table (Name | Idea | Comments) — supports CSV/TSV",
         value="",
         height=120,
-        placeholder="Name\tRole\tIdea\nCasey Vega\tProduct Manager\tAgentic QA bot interviewing power users nightly\n…",
+        placeholder="Name\tIdea\tComments\nCasey Vega\tAgentic QA bot interviewing power users nightly\tExploring QA automation for support teams\n…",
     )
     if st.button("Import table"):
         parsed = parse_table_input(table_input)
@@ -162,17 +200,17 @@ def main() -> None:
         else:
             st.session_state.agent_count = len(parsed)
             ensure_agent_state(len(parsed))
-            for idx, (name, role, idea) in enumerate(parsed):
+            for idx, (name, idea, comments) in enumerate(parsed):
                 st.session_state[f"agent_name_{idx}"] = name
-                st.session_state[f"agent_role_{idx}"] = role
                 st.session_state[f"agent_idea_{idx}"] = idea
+                st.session_state[f"agent_comments_{idx}"] = comments
             st.success(f"Imported {len(parsed)} participants from table input.")
     for idx in range(st.session_state.agent_count):
         st.markdown(f"**Participant {idx + 1}**")
-        cols = st.columns(3)
-        cols[0].text_input("Name", key=f"agent_name_{idx}", placeholder="Casey Vega")
-        cols[1].text_input("Role", key=f"agent_role_{idx}", placeholder="Product Manager")
-        cols[2].text_input("Idea", key=f"agent_idea_{idx}", placeholder="Agentic QA bot interviewing power users...")
+        cols = st.columns([1, 1, 1])
+        cols[0].text_input("Idea", key=f"agent_idea_{idx}", placeholder="Agentic QA bot interviewing power users...")
+        cols[1].text_input("Name", key=f"agent_name_{idx}", placeholder="Casey Vega")
+        cols[2].text_input("Comments", key=f"agent_comments_{idx}", placeholder="Looking for AI ethics collaborator")
         st.divider()
 
     if run_simulation:
@@ -194,15 +232,25 @@ def main() -> None:
                 conversation_rounds=int(conversation_rounds),
             )
             simulator = HackathonSimulator(profiles, config=config)
-            progress_box = st.sidebar.empty()
-            progress_log: List[str] = []
+            progress_container = st.container()
+            st.session_state.progress_feed = []
+
+            def render_feed(messages: List[str]) -> None:
+                progress_container.empty()
+                with progress_container:
+                    st.markdown("### Live conversation feed")
+                    for entry in messages[-12:]:
+                        avatar = "assistant" if "🤝" in entry else "user"
+                        with st.chat_message(avatar):
+                            st.markdown(entry)
 
             def hook(message: str) -> None:
-                progress_log.append(message)
-                progress_box.write("\n".join(progress_log[-8:]))
+                st.session_state.progress_feed.append(message)
+                render_feed(st.session_state.progress_feed)
 
             simulator.set_progress_hook(hook)
             summary = simulator.run()
+            render_feed(st.session_state.progress_feed)
         except Exception as err:
             st.error(str(err))
             summary = None

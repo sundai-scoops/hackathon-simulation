@@ -56,7 +56,7 @@ class LLMResponder:
             prompt = (
                 "You are moderating a hackathon sprint. "
                 "Produce one concise insight (<=3 sentences) that reflects what this team likely says next. "
-                "Focus on critique, next steps, or validation pressure.\n\n"
+                "Highlight at least one tension point, skepticism, or spicy critique alongside any momentum.\n\n"
                 f"Phase: {phase}\n"
                 f"Team: {member_lines}\n"
                 f"Idea: {idea}\n"

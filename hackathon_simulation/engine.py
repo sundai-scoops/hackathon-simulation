@@ -174,7 +174,8 @@ class HackathonSimulator:
             "\"consensus_idea\": string,\n"
             "\"should_collaborate\": boolean,\n"
             "\"recommended_actions\": array of strings.\n"
-            "Keep the summary concise but specific."
+            "Keep the summary concise but specific. Surface at least one candid critique or skeptical take if it comes up,"
+            " and allow the tone to be lively (a bit spicy is fine) while staying constructive."
         )
 
         response_text = self.llm.generate_team_update(
@@ -236,8 +237,10 @@ class HackathonSimulator:
         clusters = self._derive_clusters(states)
         results: List[TeamResult] = []
         for cluster_states in clusters:
+            if not cluster_states:
+                continue
             profiles = [state.profile for state in cluster_states]
-            idea = cluster_states[0].idea
+            idea = cluster_states[0].idea or cluster_states[0].origin_idea
             metrics = self._assess_idea_for_group(idea, cluster_states, rng)
             score_breakdown = self._score_outcome(
                 metrics,
