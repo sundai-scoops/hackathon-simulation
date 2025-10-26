@@ -1,5 +1,5 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
-import random
+import os
 
 # Define agent personalities and ideas
 agents = [
@@ -16,7 +16,7 @@ llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     temperature=1.0,
     max_retries=2,
-    google_api_key="asdf",
+    google_api_key=os.environ.get("GOOGLE_API_KEY"),
 )
 
 # Bind tools to the model
