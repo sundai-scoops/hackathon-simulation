@@ -1,0 +1,922 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>Hackathon Simulation</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <style>
+            :root {
+                --bg-1: #0b1020;
+                --bg-2: #0f1630;
+                --panel: rgba(255, 255, 255, 0.04);
+                --panel-2: rgba(255, 255, 255, 0.1);
+                --text: #eaf0ff;
+                --muted: #aab4db;
+                --accent: #6aa6ff;
+                --accent-2: #9b6bff;
+                --ok: #60d394;
+                --warn: #f7b955;
+                --err: #ff7b7b;
+                --chip: rgba(255, 255, 255, 0.08);
+            }
+            * {
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                height: 100%;
+            }
+            body {
+                margin: 0;
+                padding: 0;
+                color: var(--text);
+                background: radial-gradient(
+                    1200px 900px at 10% -10%,
+                    var(--bg-2),
+                    var(--bg-1) 65%
+                );
+                font-family:
+                    ui-sans-serif,
+                    system-ui,
+                    -apple-system,
+                    Segoe UI,
+                    Roboto,
+                    Helvetica,
+                    Arial;
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+            .wrap {
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 24px;
+            }
+            .header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 16px;
+                margin-bottom: 18px;
+            }
+            .title {
+                display: flex;
+                align-items: baseline;
+                gap: 12px;
+            }
+            .title h1 {
+                margin: 0;
+                letter-spacing: 0.4px;
+                background: linear-gradient(135deg, var(--text), #cfe0ff 70%);
+                -webkit-background-clip: text;
+                background-clip: text;
+                color: transparent;
+                font-size: 28px;
+                font-weight: 800;
+            }
+            .badge {
+                font-size: 12px;
+                padding: 4px 8px;
+                border-radius: 999px;
+                background: var(--chip);
+                color: var(--muted);
+                border: 1px solid var(--panel-2);
+            }
+            .grid-2 {
+                display: grid;
+                grid-template-columns: 1.1fr 0.9fr;
+                gap: 16px;
+            }
+            .grid {
+                display: grid;
+                gap: 12px;
+            }
+            .card {
+                background: linear-gradient(
+                    180deg,
+                    var(--panel),
+                    rgba(255, 255, 255, 0.02)
+                );
+                border: 1px solid var(--panel-2);
+                border-radius: 16px;
+                padding: 18px;
+                box-shadow:
+                    0 20px 60px rgba(0, 0, 0, 0.35),
+                    inset 0 0 50px rgba(255, 255, 255, 0.04);
+                backdrop-filter: blur(6px);
+            }
+            label {
+                font-size: 12px;
+                color: var(--muted);
+                margin-bottom: 6px;
+                display: block;
+            }
+            input,
+            textarea,
+            select {
+                width: 100%;
+                padding: 10px 12px;
+                border-radius: 10px;
+                border: 1px solid var(--panel-2);
+                background: #0b1226;
+                color: var(--text);
+                outline: none;
+                font-size: 14px;
+            }
+            input:focus,
+            textarea:focus,
+            select:focus {
+                border-color: #6aa6ff66;
+                box-shadow: 0 0 0 3px #6aa6ff22;
+            }
+            textarea {
+                min-height: 120px;
+                resize: vertical;
+            }
+            .row-4 {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 10px;
+            }
+            .btn {
+                padding: 10px 14px;
+                border-radius: 10px;
+                border: 0;
+                font-weight: 700;
+                cursor: pointer;
+                color: #0b1020;
+                background: linear-gradient(
+                    135deg,
+                    var(--accent),
+                    var(--accent-2)
+                );
+                box-shadow: 0 8px 20px rgba(106, 166, 255, 0.35);
+            }
+            .btn.secondary {
+                background: transparent;
+                border: 1px solid var(--panel-2);
+                color: var(--text);
+                box-shadow: none;
+            }
+            .btn[disabled] {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+            .muted {
+                color: var(--muted);
+                font-size: 12px;
+            }
+            .inline {
+                display: inline-flex;
+                gap: 10px;
+                align-items: center;
+                flex-wrap: wrap;
+            }
+            .divider {
+                height: 1px;
+                background: var(--panel-2);
+                margin: 12px 0;
+            }
+            .section-title {
+                margin: 4px 0 8px;
+                font-size: 14px;
+                font-weight: 700;
+                letter-spacing: 0.3px;
+                color: #dbe4ff;
+            }
+            pre {
+                white-space: pre-wrap;
+                word-break: break-word;
+                font-size: 12px;
+                background: #0a0f22;
+                border: 1px solid var(--panel-2);
+                border-radius: 12px;
+                padding: 12px;
+                max-height: 460px;
+                overflow: auto;
+            }
+            .cols {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 16px;
+            }
+            details {
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid var(--panel-2);
+                border-radius: 12px;
+                padding: 10px 12px;
+                margin: 10px 0;
+            }
+            details > summary {
+                cursor: pointer;
+                list-style: none;
+                font-weight: 700;
+                color: #e8efff;
+                outline: none;
+            }
+            details > summary::-webkit-details-marker {
+                display: none;
+            }
+            .scores {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+                margin-top: 6px;
+            }
+            .chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 4px 8px;
+                border-radius: 999px;
+                background: var(--chip);
+                color: var(--muted);
+                border: 1px solid var(--panel-2);
+                font-size: 12px;
+            }
+            .status {
+                font-size: 13px;
+                padding: 6px 8px;
+                border-radius: 10px;
+                border: 1px solid var(--panel-2);
+                background: rgba(255, 255, 255, 0.03);
+            }
+            .status.ok {
+                color: var(--ok);
+                border-color: #60d39455;
+                background: #60d3940d;
+            }
+            .status.warn {
+                color: var(--warn);
+                border-color: #f7b95566;
+                background: #f7b9550f;
+            }
+            .status.err {
+                color: var(--err);
+                border-color: #ff7b7b66;
+                background: #ff7b7b10;
+            }
+            .footer {
+                margin-top: 16px;
+                color: var(--muted);
+                font-size: 12px;
+                text-align: center;
+            }
+            @media (max-width: 1000px) {
+                .grid-2 {
+                    grid-template-columns: 1fr;
+                }
+                .cols {
+                    grid-template-columns: 1fr;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="wrap">
+            <div class="header">
+                <div class="title">
+                    <h1>Hackathon Simulation</h1>
+                    <span class="badge">FastAPI + Gemini</span>
+                </div>
+                <div class="inline">
+                    <button id="btnRun" class="btn" type="button">
+                        Run simulation
+                    </button>
+                    <span
+                        id="status"
+                        class="status"
+                        aria-live="polite"
+                        style="display: none"
+                    ></span>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <section class="card" aria-labelledby="config-title">
+                    <div class="grid">
+                        <div>
+                            <label for="apiKey">Google API Key</label>
+                            <input
+                                id="apiKey"
+                                type="password"
+                                placeholder="GOOGLE_API_KEY or GEMINI_API_KEY (optional if set on server)"
+                                autocomplete="off"
+                            />
+                            <div class="muted">
+                                Tip: you can leave this blank if your server
+                                already has GOOGLE_API_KEY/GEMINI_API_KEY set.
+                            </div>
+                        </div>
+
+                        <div id="config-title" class="section-title">
+                            Options
+                        </div>
+                        <div class="grid">
+                            <div class="row-4">
+                                <div>
+                                    <label for="runs">Runs</label>
+                                    <input
+                                        id="runs"
+                                        type="number"
+                                        min="1"
+                                        max="20"
+                                        value="3"
+                                    />
+                                </div>
+                                <div>
+                                    <label for="rounds">Rounds</label>
+                                    <input
+                                        id="rounds"
+                                        type="number"
+                                        min="1"
+                                        max="24"
+                                        value="6"
+                                    />
+                                </div>
+                                <div>
+                                    <label for="seed">Seed</label>
+                                    <input
+                                        id="seed"
+                                        type="number"
+                                        min="0"
+                                        max="100000"
+                                        value="42"
+                                    />
+                                </div>
+                                <div>
+                                    <label for="cap">Call budget</label>
+                                    <input
+                                        id="cap"
+                                        type="number"
+                                        min="1"
+                                        max="5000"
+                                        value="10"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="row-4">
+                                <div>
+                                    <label for="minTeam">Min team size</label>
+                                    <input
+                                        id="minTeam"
+                                        type="number"
+                                        min="1"
+                                        max="10"
+                                        value="2"
+                                    />
+                                </div>
+                                <div>
+                                    <label for="maxTeam">Max team size</label>
+                                    <input
+                                        id="maxTeam"
+                                        type="number"
+                                        min="1"
+                                        max="10"
+                                        value="4"
+                                    />
+                                </div>
+                                <div>
+                                    <label for="model">LLM model</label>
+                                    <input
+                                        id="model"
+                                        value="gemini-flash-latest"
+                                    />
+                                </div>
+                                <div>
+                                    <label for="temp">Temperature</label>
+                                    <input
+                                        id="temp"
+                                        type="number"
+                                        step="0.05"
+                                        min="0"
+                                        max="1.5"
+                                        value="0.9"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="roster"
+                                >Participants (Name | Idea | Comments)</label
+                            >
+                            <textarea
+                                id="roster"
+                                placeholder="Casey Vega | Agentic QA bot interviewing power users nightly | Exploring QA automation for support teams
+Avery Lin | AI sprint reviewer for weekly retros | —
+Jordan Park | On-call incident summarizer using agentic RAG | Wants judge-friendly metrics"
+                            ></textarea>
+                            <div class="muted">
+                                Enter one per line. Each participant must have a
+                                name and at least an idea or comments.
+                            </div>
+                        </div>
+
+                        <div class="inline">
+                            <button
+                                id="btnLoadSample"
+                                class="btn secondary"
+                                type="button"
+                            >
+                                Load sample
+                            </button>
+                            <button
+                                id="btnClear"
+                                class="btn secondary"
+                                type="button"
+                            >
+                                Clear
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="card" aria-labelledby="output-title">
+                    <div id="output-title" class="section-title">
+                        Live progress
+                    </div>
+                    <pre id="progress" style="min-height: 160px"></pre>
+
+                    <div class="divider"></div>
+
+                    <div class="cols">
+                        <div>
+                            <div class="section-title">Summary (JSON)</div>
+                            <pre id="output" style="min-height: 160px"></pre>
+                            <div class="inline">
+                                <button
+                                    id="btnCopyJson"
+                                    class="btn secondary"
+                                    type="button"
+                                >
+                                    Copy JSON
+                                </button>
+                                <button
+                                    id="btnDownloadJson"
+                                    class="btn secondary"
+                                    type="button"
+                                >
+                                    Download JSON
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="section-title">Rendered</div>
+                            <div
+                                id="rendered"
+                                class="grid"
+                                style="max-height: 360px; overflow: auto"
+                            >
+                                <div class="muted">
+                                    Run a simulation to see a rendered summary
+                                    here.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="footer">
+                Tip: try multiple runs with the same seed to compare team
+                composition and leaderboard stability.
+            </div>
+        </div>
+
+        <script>
+            const $ = (sel) => document.querySelector(sel);
+
+            function setStatus(text, kind = "") {
+                const el = $("#status");
+                el.textContent = text || "";
+                if (!text) {
+                    el.style.display = "none";
+                    el.className = "status";
+                    return;
+                }
+                el.style.display = "";
+                el.className = "status" + (kind ? " " + kind : "");
+            }
+
+            function parseRoster(text) {
+                const lines = (text || "")
+                    .split(/\n+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                return lines
+                    .map((line) => {
+                        const parts = line.split(/[|\t,]/).map((s) => s.trim());
+                        const name = parts[0] || "";
+                        const idea = parts[1] || "";
+                        const comments = parts[2] || "";
+                        return { name, idea, comments };
+                    })
+                    .filter((p) => p.name && (p.idea || p.comments));
+            }
+
+            function validateInputs() {
+                const minTeam = parseInt($("#minTeam").value || "2", 10);
+                const maxTeam = parseInt($("#maxTeam").value || "4", 10);
+                if (maxTeam < minTeam)
+                    throw new Error("Max team size must be ≥ Min team size.");
+                const runs = parseInt($("#runs").value || "3", 10);
+                const rounds = parseInt($("#rounds").value || "6", 10);
+                if (runs < 1 || rounds < 1)
+                    throw new Error("Runs and Rounds must be at least 1.");
+            }
+
+            function clip(text, n = 240) {
+                const t = (text || "").toString();
+                return t.length > n ? t.slice(0, n - 1) + "…" : t;
+            }
+
+            function scoreChip(label, value) {
+                const num =
+                    value == null || isNaN(Number(value))
+                        ? "–"
+                        : Number(value).toFixed(2);
+                return `<span class="chip"><strong>${label}:</strong> ${num}</span>`;
+            }
+
+            function renderSummary(summary) {
+                const mount = $("#rendered");
+                mount.innerHTML = "";
+
+                if (!summary || !summary.runs) {
+                    mount.innerHTML = `<div class="muted">No data.</div>`;
+                    return;
+                }
+
+                const earlyStop = (summary.leaderboard || []).find(
+                    (e) => e.slug === "early-stop",
+                );
+                if (earlyStop) {
+                    const warn = document.createElement("div");
+                    warn.className = "status warn";
+                    warn.textContent =
+                        earlyStop.idea_name || "Simulation halted early.";
+                    mount.appendChild(warn);
+                }
+
+                // Runs
+                const runsCard = document.createElement("div");
+                runsCard.className = "card";
+                const runsHeader = document.createElement("div");
+                runsHeader.className = "section-title";
+                runsHeader.textContent = "Runs";
+                runsCard.appendChild(runsHeader);
+
+                for (const run of summary.runs) {
+                    const det = document.createElement("details");
+                    det.open = run.run_index === 1;
+                    const sum = document.createElement("summary");
+                    sum.textContent = `Run ${run.run_index} • seed ${run.seed}`;
+                    det.appendChild(sum);
+
+                    for (const team of run.teams || []) {
+                        const block = document.createElement("div");
+                        block.style.margin = "8px 0 12px";
+                        block.innerHTML = `
+            <div style="display:grid;grid-template-columns:1.2fr 2fr;gap:8px;align-items:start;">
+              <div><strong>${team.run_rank}. ${clip(team.team_name, 80)}</strong></div>
+              <div class="muted">
+                Final idea: ${clip(team.final_idea)}<br/>
+                Origin: ${clip(team.idea_origin)} • ${team.pivoted ? "Pivoted" : "Stayed course"} • ${team.research_done ? "✅ research" : "⚠️ no research"}
+              </div>
+            </div>
+          `;
+                        const scores = document.createElement("div");
+                        scores.className = "scores";
+                        const sb = team.score_breakdown || {};
+                        const total =
+                            team.total_score == null ||
+                            isNaN(Number(team.total_score))
+                                ? "–"
+                                : Number(team.total_score).toFixed(2);
+                        scores.innerHTML = `
+            ${scoreChip("Impact", sb.impact)}
+            ${scoreChip("Feasibility", sb.feasibility)}
+            ${scoreChip("Cohesion", sb.cohesion)}
+            ${scoreChip("Speed", sb.speed)}
+            ${scoreChip("Confidence", sb.confidence)}
+            <span class="chip"><strong>Total:</strong> ${total}</span>
+          `;
+                        block.appendChild(scores);
+
+                        if ((team.conversation_log || []).length) {
+                            const conv = document.createElement("details");
+                            conv.style.marginTop = "6px";
+                            conv.innerHTML = `<summary>Conversation log (${team.conversation_log.length})</summary>`;
+                            const list = document.createElement("div");
+                            list.style.margin = "6px 0 0 10px";
+                            for (const line of team.conversation_log) {
+                                const div = document.createElement("div");
+                                div.textContent = "• " + line;
+                                list.appendChild(div);
+                            }
+                            conv.appendChild(list);
+                            block.appendChild(conv);
+                        }
+
+                        if ((team.six_hour_plan || []).length) {
+                            const plan = document.createElement("div");
+                            plan.style.marginTop = "6px";
+                            plan.innerHTML = `<div class="section-title">Six-hour plan</div>`;
+                            for (const step of team.six_hour_plan) {
+                                const div = document.createElement("div");
+                                div.textContent = "• " + step;
+                                plan.appendChild(div);
+                            }
+                            block.appendChild(plan);
+                        }
+
+                        det.appendChild(block);
+                        const hr = document.createElement("div");
+                        hr.className = "divider";
+                        det.appendChild(hr);
+                    }
+
+                    runsCard.appendChild(det);
+                }
+                mount.appendChild(runsCard);
+
+                // Leaderboard
+                const lbCard = document.createElement("div");
+                lbCard.className = "card";
+                const lbHeader = document.createElement("div");
+                lbHeader.className = "section-title";
+                lbHeader.textContent = "Leaderboard";
+                lbCard.appendChild(lbHeader);
+
+                const leaderboard = (summary.leaderboard || []).filter(
+                    (e) => e.slug !== "early-stop",
+                );
+                if (!leaderboard.length) {
+                    lbCard.innerHTML += `<div class="muted">No leaderboard entries (try more rounds or runs).</div>`;
+                } else {
+                    leaderboard.forEach((entry, idx) => {
+                        const sec = document.createElement("div");
+                        sec.style.margin = "8px 0 12px";
+                        const avg =
+                            entry.avg_score == null ||
+                            isNaN(Number(entry.avg_score))
+                                ? "–"
+                                : Number(entry.avg_score).toFixed(2);
+                        sec.innerHTML = `
+            <div><strong>${idx + 1}. ${clip(entry.idea_name)}</strong></div>
+            <div class="scores">
+              <span class="chip"><strong>Avg score:</strong> ${avg}</span>
+              <span class="chip"><strong>Appearances:</strong> ${entry.appearances}</span>
+              <span class="chip"><strong>Wins:</strong> ${entry.wins}</span>
+              <span class="chip"><strong>Best team:</strong> ${clip(entry.best_team, 60)} (run ${entry.best_run})</span>
+            </div>
+          `;
+                        if (entry.best_reason) {
+                            const reason = document.createElement("div");
+                            reason.className = "muted";
+                            reason.style.marginTop = "4px";
+                            reason.textContent =
+                                "Highlight: " + entry.best_reason;
+                            sec.appendChild(reason);
+                        }
+                        if ((entry.sample_plan || []).length) {
+                            const plan = document.createElement("details");
+                            plan.style.marginTop = "6px";
+                            plan.innerHTML = `<summary>Sample six-hour plan</summary>`;
+                            const list = document.createElement("div");
+                            list.style.margin = "6px 0 0 10px";
+                            for (const step of entry.sample_plan) {
+                                const div = document.createElement("div");
+                                div.textContent = "• " + step;
+                                list.appendChild(div);
+                            }
+                            plan.appendChild(list);
+                            sec.appendChild(plan);
+                        }
+                        lbCard.appendChild(sec);
+                        const hr = document.createElement("div");
+                        hr.className = "divider";
+                        lbCard.appendChild(hr);
+                    });
+                }
+                mount.appendChild(lbCard);
+            }
+
+            function makePayload() {
+                const apiKey = $("#apiKey").value.trim();
+                const runs = parseInt($("#runs").value || "3", 10);
+                const rounds = parseInt($("#rounds").value || "6", 10);
+                const seed = parseInt($("#seed").value || "42", 10);
+                const model = $("#model").value || "gemini-flash-latest";
+                const temp = parseFloat($("#temp").value || "0.9");
+                const cap = parseInt($("#cap").value || "10", 10);
+                const minTeam = parseInt($("#minTeam").value || "2", 10);
+                const maxTeam = parseInt($("#maxTeam").value || "4", 10);
+                const participants = parseRoster($("#roster").value);
+
+                return {
+                    participants,
+                    google_api_key: apiKey || null,
+                    options: {
+                        runs,
+                        conversation_rounds: rounds,
+                        seed,
+                        llm_model: model,
+                        llm_temperature: temp,
+                        llm_call_cap: cap,
+                        min_team_size: minTeam,
+                        max_team_size: maxTeam,
+                        pivot_base_chance: 0.35,
+                        research_trigger: 0.45,
+                    },
+                };
+            }
+
+            async function runSimulation() {
+                try {
+                    validateInputs();
+                } catch (err) {
+                    setStatus(err.message, "warn");
+                    return;
+                }
+
+                const participants = parseRoster($("#roster").value);
+                if (!participants.length) {
+                    setStatus(
+                        "Please enter at least one participant with a name and idea or comments.",
+                        "warn",
+                    );
+                    return;
+                }
+
+                $("#btnRun").disabled = true;
+                setStatus(
+                    "Running… This may take a bit depending on LLM calls.",
+                    "",
+                );
+                $("#progress").textContent = "";
+                $("#output").textContent = "";
+                $("#rendered").innerHTML =
+                    `<div class="muted">Rendering…</div>`;
+
+                const payload = makePayload();
+                const started = Date.now();
+                try {
+                    const resp = await fetch("/simulate", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload),
+                    });
+                    const data = await resp.json();
+                    const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+
+                    if (!resp.ok || !data.ok) {
+                        const msg =
+                            data?.message ||
+                            (data?.detail &&
+                                (Array.isArray(data.detail)
+                                    ? data.detail[0]?.msg
+                                    : data.detail)) ||
+                            "Simulation failed";
+                        setStatus("Error: " + msg, "err");
+                        $("#progress").textContent = (data?.progress || [])
+                            .map((s) => "- " + s)
+                            .join("\n");
+                        $("#rendered").innerHTML =
+                            `<div class="muted">No renderable summary.</div>`;
+                        return;
+                    }
+
+                    $("#output").textContent = JSON.stringify(
+                        data.summary,
+                        null,
+                        2,
+                    );
+                    $("#progress").textContent = (data.progress || [])
+                        .slice(-200)
+                        .map((s) => "- " + s)
+                        .join("\n");
+                    renderSummary(data.summary);
+                    setStatus(`Done in ${elapsed}s`, "ok");
+                } catch (err) {
+                    setStatus(
+                        "Network or server error: " +
+                            (err && err.message ? err.message : err),
+                        "err",
+                    );
+                    $("#rendered").innerHTML =
+                        `<div class="muted">No renderable summary.</div>`;
+                } finally {
+                    $("#btnRun").disabled = false;
+                }
+            }
+
+            function loadSample() {
+                $("#roster").value =
+                    `Casey Vega | Agentic QA bot interviewing power users nightly | Exploring QA automation for support teams
+Avery Lin | AI sprint reviewer for weekly retros | Seeking scoring rubric
+Jordan Park | On-call incident summarizer using agentic RAG | Wants judge-friendly metrics`;
+                setStatus("Sample loaded.", "ok");
+            }
+
+            function clearAll() {
+                $("#roster").value = "";
+                $("#output").textContent = "";
+                $("#progress").textContent = "";
+                $("#rendered").innerHTML =
+                    `<div class="muted">Run a simulation to see a rendered summary here.</div>`;
+                setStatus("Cleared.", "ok");
+            }
+
+            function copyToClipboard(text, label = "Copied") {
+                if (!navigator.clipboard) {
+                    const ta = document.createElement("textarea");
+                    ta.value = text || "";
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand("copy");
+                    document.body.removeChild(ta);
+                    setStatus(label, "ok");
+                    return;
+                }
+                navigator.clipboard
+                    .writeText(text || "")
+                    .then(() => setStatus(label, "ok"));
+            }
+
+            function downloadJson(filename, json) {
+                const blob = new Blob([JSON.stringify(json, null, 2)], {
+                    type: "application/json",
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = filename || "hackathon_simulation_summary.json";
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 500);
+            }
+
+            // Wire events
+            $("#btnRun").addEventListener("click", runSimulation);
+            $("#btnLoadSample").addEventListener("click", loadSample);
+            $("#btnClear").addEventListener("click", clearAll);
+            $("#btnCopyJson").addEventListener("click", () => {
+                const text = $("#output").textContent || "";
+                copyToClipboard(text, "JSON copied");
+            });
+            $("#btnDownloadJson").addEventListener("click", () => {
+                let data = {};
+                try {
+                    data = JSON.parse($("#output").textContent || "{}");
+                } catch {}
+                downloadJson("hackathon_simulation_summary.json", data);
+            });
+
+            // Restore persisted UI state
+            (function restore() {
+                try {
+                    const saved = JSON.parse(
+                        localStorage.getItem("hsim_ui") || "{}",
+                    );
+                    if (saved.apiKey) $("#apiKey").value = saved.apiKey;
+                    if (saved.roster) $("#roster").value = saved.roster;
+                    if (saved.model) $("#model").value = saved.model;
+                    if (typeof saved.temp === "number")
+                        $("#temp").value = saved.temp;
+                    if (saved.runs) $("#runs").value = saved.runs;
+                    if (saved.rounds) $("#rounds").value = saved.rounds;
+                    if (saved.seed) $("#seed").value = saved.seed;
+                    if (saved.cap) $("#cap").value = saved.cap;
+                    if (saved.minTeam) $("#minTeam").value = saved.minTeam;
+                    if (saved.maxTeam) $("#maxTeam").value = saved.maxTeam;
+                } catch {}
+            })();
+
+            // Persist UI state (debounced)
+            let saveT = null;
+            document.addEventListener("input", () => {
+                clearTimeout(saveT);
+                saveT = setTimeout(() => {
+                    try {
+                        const state = {
+                            apiKey: $("#apiKey").value,
+                            roster: $("#roster").value,
+                            model: $("#model").value,
+                            temp: parseFloat($("#temp").value || "0.9"),
+                            runs: parseInt($("#runs").value || "3", 10),
+                            rounds: parseInt($("#rounds").value || "6", 10),
+                            seed: parseInt($("#seed").value || "42", 10),
+                            cap: parseInt($("#cap").value || "10", 10),
+                            minTeam: parseInt($("#minTeam").value || "2", 10),
+                            maxTeam: parseInt($("#maxTeam").value || "4", 10),
+                        };
+                        localStorage.setItem("hsim_ui", JSON.stringify(state));
+                    } catch {}
+                }, 200);
+            });
+        </script>
+    </body>
+</html>
