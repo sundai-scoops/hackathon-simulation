@@ -17,7 +17,7 @@ from hackathon_simulation import (
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run hackathon idea simulations.")
-    parser.add_argument("--profiles", type=str, default=None, help="Optional path to JSON profile definitions.")
+    parser.add_argument("--profiles", type=str, required=True, help="Path to participant profile JSON.")
     parser.add_argument("--runs", type=int, default=5, help="Number of simulation runs to execute.")
     parser.add_argument("--seed", type=int, default=42, help="Base random seed.")
     parser.add_argument(
@@ -28,7 +28,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--json-out", type=str, default=None, help="Optional path to write summary JSON.")
     parser.add_argument("--markdown-out", type=str, default=None, help="Optional path to write summary Markdown.")
-    parser.add_argument("--no-llm", action="store_true", help="Disable LLM-backed insights.")
     parser.add_argument("--llm-model", type=str, default="gemini-1.5-flash", help="LLM model id.")
     parser.add_argument("--llm-temperature", type=float, default=0.9, help="Sampling temperature for LLM output.")
     parser.add_argument("--llm-call-cap", type=int, default=500, help="Maximum LLM calls per simulation run.")
@@ -39,14 +38,16 @@ def main() -> None:
     parser = build_arg_parser()
     args = parser.parse_args()
 
-    profiles = load_profiles(args.profiles)
+    try:
+        profiles = load_profiles(args.profiles)
+    except Exception as exc:
+        raise SystemExit(f"Failed to load profiles: {exc}")
     min_size, max_size = parse_team_size(args.team_size)
     config = SimulationConfig(
         runs=args.runs,
         min_team_size=min_size,
         max_team_size=max_size,
         seed=args.seed,
-        llm_enabled=not args.no_llm,
         llm_model=args.llm_model,
         llm_temperature=args.llm_temperature,
         llm_call_cap=args.llm_call_cap,

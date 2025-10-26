@@ -9,7 +9,7 @@ from .models import (
     SimulationSummary,
     TeamResult,
 )
-from .profiles import DEFAULT_PROFILES, load_profiles
+from .profiles import load_profiles
 from .utils import ensure_parent_dir, parse_team_size
 
 __all__ = [
@@ -24,7 +24,6 @@ __all__ = [
     "SimulationRunResult",
     "SimulationSummary",
     "TeamResult",
-    "DEFAULT_PROFILES",
     "load_profiles",
     "ensure_parent_dir",
     "parse_team_size",

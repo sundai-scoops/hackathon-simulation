@@ -12,29 +12,29 @@ This project stress-tests hackathon ideas by simulating short iterative rounds. 
   ```bash
   python3 -m pip install --upgrade pip
   python3 -m pip install streamlit langchain langchain-google-genai
-  export GOOGLE_API_KEY=your_key  # optional but unlocks richer insights
-  python3 main.py --runs 2 --seed 13
+  export GOOGLE_API_KEY=your_key  # required for Gemini-backed simulation
+  python3 main.py --runs 2 --seed 13 --profiles data/profiles.json
   ```
 - Optional isolated setup:
   ```bash
   python3 -m venv .venv && source .venv/bin/activate
   pip install -e .
-  python3 main.py --runs 2 --seed 13
+  export GOOGLE_API_KEY=your_key
+  python3 main.py --runs 2 --seed 13 --profiles data/profiles.json
   ```
 
 ### CLI options
-- `--profiles path/to/profiles.json` — custom participant roster.
+- `--profiles path/to/profiles.json` — required; JSON list of participants.
 - `--team-size 3-5` — min/max team size.
 - `--runs 8` and `--seed 99` — control reproducibility.
 - `--json-out results/run.json` or `--markdown-out results/summary.md` — export data for sharing.
-- `--no-llm` — opt out of API calls (defaults to on).
 - `--llm-call-cap 250` — adjust the per-simulation Gemini request budget (default 500).
 
 ### Streamlit dashboard
 ```bash
 streamlit run streamlit_app/app.py
 ```
-You’ll get sliders for run counts, team ranges, pivot pressure, and research appetite. Paste agents into the text area, upload JSON, or fall back to the sample roster. The app renders:
+You’ll get sliders for run counts, team ranges, pivot pressure, and research appetite. Enter each participant’s name, role, and idea directly in the roster form (no defaults). The app renders:
 - Per-run breakdowns with conversations, pivots, and scoring.
 - Aggregated leaderboard with reasoning highlights.
 - Download buttons for the same JSON/Markdown exports as the CLI.
@@ -44,14 +44,14 @@ You’ll get sliders for run counts, team ranges, pivot pressure, and research a
 - CLI example:
   ```bash
   export GOOGLE_API_KEY=your_key
-  python3 main.py --runs 2 --use-llm --llm-model gemini-1.5-flash
+  python3 main.py --runs 2 --llm-model gemini-1.5-flash --profiles data/profiles.json
   ```
 - Each run now calls Gemini at every major phase (alignment, blending, critique, pivot, research, wrap-up) to surface dynamic agent chatter—very similar to the `genagents` style loops. A call budget (default 500) avoids runaway costs.
-- Streamlit: toggle **Use Gemini LLM insights** and paste the key (stored locally for the session).
-- If no key is present the simulator prints a one-time warning and falls back to heuristic insights automatically.
+- Streamlit: paste your `GOOGLE_API_KEY`, choose model/temperature/budget, and run.
+- Missing keys or misconfigured dependencies now stop the run immediately so you never read heuristic placeholders.
 
 ### Custom profiles
-Supply a JSON array where each entry contains:
+The CLI expects a JSON array where each entry contains at least:
 ```jsonc
 {
   "name": "Casey Vega",
@@ -63,7 +63,7 @@ Supply a JSON array where each entry contains:
   "xp_level": "senior"
 }
 ```
-Only `name`, `role`, and `idea` are required.
+Only `name`, `role`, and `idea` are required; additional fields are optional.
 
 ### Project layout
 - `hackathon_simulation/` — modular core (models, profiles, engine, exports, helpers).

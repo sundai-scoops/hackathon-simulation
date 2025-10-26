@@ -23,7 +23,6 @@ class SimulationConfig:
     pivot_base_chance: float = 0.35
     research_trigger: float = 0.45
     seed: int = 42
-    llm_enabled: bool = True
     llm_model: str = "gemini-1.5-flash"
     llm_temperature: float = 0.9
     llm_call_cap: int = 500

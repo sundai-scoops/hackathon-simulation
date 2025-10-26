@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
-from typing import Iterable, List, Optional
-
-import os
+from typing import Iterable, List
 
 import streamlit as st
 
@@ -15,88 +14,62 @@ if str(ROOT) not in sys.path:
 
 from hackathon_simulation import (  # noqa: E402
     AgentProfile,
-    DEFAULT_PROFILES,
     HackathonSimulator,
     SimulationConfig,
     summary_to_dict,
     summary_to_markdown,
 )
 
-st.set_page_config(page_title="Hackathon Idea Simulation", layout="wide")
+st.set_page_config(page_title="Hackathon Simulation", layout="wide")
 
 
-def load_uploaded_profiles(uploaded_file) -> List[AgentProfile]:
-    if not uploaded_file:
-        return DEFAULT_PROFILES
-    try:
-        payload = json.load(uploaded_file)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Could not parse JSON: {exc}") from exc
-    if not isinstance(payload, list):
-        raise ValueError("Profile file must be a list of agent definitions.")
+def ensure_agent_state(count: int) -> None:
+    count = int(count)
+    if "agent_count" not in st.session_state:
+        st.session_state.agent_count = count
+    if "agent_count" in st.session_state and st.session_state.agent_count != count:
+        st.session_state.agent_count = count
+    for idx in range(st.session_state.agent_count):
+        for field in ("name", "role", "idea"):
+            key = f"agent_{field}_{idx}"
+            if key not in st.session_state:
+                st.session_state[key] = ""
+    tracked_prefixes = ("agent_name_", "agent_role_", "agent_idea_")
+    keys_to_remove = [
+        key
+        for key in list(st.session_state.keys())
+        if key.startswith(tracked_prefixes)
+        and int(key.split("_")[-1]) >= st.session_state.agent_count
+    ]
+    for key in keys_to_remove:
+        del st.session_state[key]
+
+
+def build_profiles(count: int) -> List[AgentProfile]:
     profiles: List[AgentProfile] = []
-    for idx, entry in enumerate(payload, start=1):
-        if not isinstance(entry, dict):
-            raise ValueError(f"Profile at index {idx} must be an object.")
-        try:
-            profiles.append(
-                AgentProfile(
-                    name=entry["name"],
-                    role=entry["role"],
-                    idea=entry["idea"],
-                    skills=entry.get("skills", []),
-                    personality=entry.get("personality", "Curious Collaborator"),
-                    motivation=entry.get("motivation", "Build something meaningful."),
-                    xp_level=entry.get("xp_level", "mid"),
-                )
+    for idx in range(count):
+        name = st.session_state.get(f"agent_name_{idx}", "").strip()
+        role = st.session_state.get(f"agent_role_{idx}", "").strip()
+        idea = st.session_state.get(f"agent_idea_{idx}", "").strip()
+        if not name or not role or not idea:
+            raise ValueError(f"Participant {idx + 1} needs name, role, and idea.")
+        profiles.append(
+            AgentProfile(
+                name=name,
+                role=role,
+                idea=idea,
+                skills=[],
+                personality="Adaptive Collaborator",
+                motivation="Ship a standout hackathon project fast.",
+                xp_level="mid",
             )
-        except KeyError as missing:
-            raise ValueError(f"Profile at index {idx} missing required field: {missing}") from missing
-    if not profiles:
-        raise ValueError("At least one profile is required.")
-    return profiles
-
-
-def parse_manual_profiles(raw: str) -> Optional[List[AgentProfile]]:
-    if not raw.strip():
-        return None
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Manual profile JSON invalid: {exc}") from exc
-    if not isinstance(payload, list):
-        raise ValueError("Manual profile JSON must be a list of agent objects.")
-    profiles: List[AgentProfile] = []
-    for idx, entry in enumerate(payload, start=1):
-        if not isinstance(entry, dict):
-            raise ValueError(f"Manual profile at index {idx} must be an object.")
-        try:
-            profiles.append(
-                AgentProfile(
-                    name=entry["name"],
-                    role=entry["role"],
-                    idea=entry["idea"],
-                    skills=entry.get("skills", []),
-                    personality=entry.get("personality", "Curious Collaborator"),
-                    motivation=entry.get("motivation", "Build something meaningful."),
-                    xp_level=entry.get("xp_level", "mid"),
-                )
-            )
-        except KeyError as missing:
-            raise ValueError(f"Manual profile missing required field: {missing}") from missing
-    if not profiles:
-        raise ValueError("Manual profile list cannot be empty.")
+        )
     return profiles
 
 
 def render_conversation(logs: Iterable[str]) -> None:
     for entry in logs:
         st.markdown(f"- {entry}")
-
-
-def render_score_breakdown(breakdown) -> None:
-    parts = [f"{metric}: {value:.2f}" for metric, value in breakdown.items()]
-    st.markdown(f"**Scores** → {', '.join(parts)}")
 
 
 def render_plan(plan: List[str]) -> None:
@@ -107,9 +80,7 @@ def render_plan(plan: List[str]) -> None:
 
 def main() -> None:
     st.title("Hackathon Simulation Sandbox")
-    st.write(
-        "Spin up simulated hackathon rounds to explore team formation, pivots, critique, and what ideas rise to the top."
-    )
+    st.caption("Bring your team roster, explore multi-round simulations, and see what ideas survive.")
 
     if "simulation_summary" not in st.session_state:
         st.session_state.simulation_summary = None
@@ -118,72 +89,58 @@ def main() -> None:
     if "simulation_markdown" not in st.session_state:
         st.session_state.simulation_markdown = ""
     if "profile_count" not in st.session_state:
-        st.session_state.profile_count = len(DEFAULT_PROFILES)
+        st.session_state.profile_count = 0
+    if "agent_count" not in st.session_state:
+        st.session_state.agent_count = 3
 
     with st.sidebar:
-        st.header("Simulation Settings")
+        st.header("Controls")
+        participant_count = st.number_input("Participants", min_value=1, max_value=30, value=st.session_state.agent_count)
+        ensure_agent_state(participant_count)
+
+        st.subheader("Simulation")
         runs = st.slider("Runs", min_value=1, max_value=10, value=3)
         team_range = st.slider("Team size range", min_value=1, max_value=6, value=(2, 4))
         seed = st.number_input("Base seed", min_value=0, max_value=10_000, value=42, step=1)
 
-        st.subheader("Behavior Tweaks")
-        pivot_chance = st.slider("Pivot pressure baseline", min_value=0.05, max_value=0.8, value=0.35, step=0.05)
-        research_trigger = st.slider("User research trigger", min_value=0.0, max_value=1.0, value=0.45, step=0.05)
-
-        st.subheader("LLM Insights")
-        use_llm = st.checkbox("Use Gemini LLM insights", value=True)
-        if use_llm:
-            llm_model = st.text_input("LLM model", value="gemini-1.5-flash")
-            llm_temperature = st.slider("LLM temperature", min_value=0.0, max_value=1.5, value=0.9, step=0.05)
-            llm_key = st.text_input("GOOGLE_API_KEY (optional)", type="password")
-            llm_call_cap = st.number_input("Max LLM calls per simulation", min_value=0, max_value=5000, value=500, step=50)
-        else:
-            llm_model = "gemini-1.5-flash"
-            llm_temperature = 0.9
-            llm_key = ""
-            llm_call_cap = 0
-
-        st.subheader("Profiles")
-        uploaded_profiles = st.file_uploader("Upload profiles JSON", type=["json"])
-        use_default = st.checkbox("Use built-in sample profiles", value=uploaded_profiles is None)
-        manual_profiles_text = st.text_area(
-            "Or paste profiles JSON",
-            value="",
-            height=180,
-            placeholder='[\n  {"name": "Casey Vega", "role": "Product Manager", "idea": "..."}\n]',
-        )
+        st.subheader("LLM")
+        llm_model = st.text_input("Model", value="gemini-1.5-flash")
+        llm_temperature = st.slider("Temperature", min_value=0.0, max_value=1.5, value=0.9, step=0.05)
+        llm_call_cap = st.number_input("Call budget", min_value=1, max_value=5000, value=500, step=50)
+        llm_key = st.text_input("GOOGLE_API_KEY", type="password")
 
         run_simulation = st.button("Run simulation", type="primary")
 
+    st.subheader("Participant Roster")
+    st.write("Provide each person's name, role, and headline idea. The simulation uses this roster verbatim.")
+    for idx in range(st.session_state.agent_count):
+        st.markdown(f"**Participant {idx + 1}**")
+        cols = st.columns(3)
+        cols[0].text_input("Name", key=f"agent_name_{idx}", placeholder="Casey Vega")
+        cols[1].text_input("Role", key=f"agent_role_{idx}", placeholder="Product Manager")
+        cols[2].text_input("Idea", key=f"agent_idea_{idx}", placeholder="Agentic QA bot interviewing power users...")
+        st.divider()
+
     if run_simulation:
         try:
-            profiles = None
-            manual_profiles = parse_manual_profiles(manual_profiles_text)
-            if manual_profiles:
-                profiles = manual_profiles
-            elif uploaded_profiles:
-                profiles = load_uploaded_profiles(uploaded_profiles)
-            elif use_default:
-                profiles = DEFAULT_PROFILES
-            else:
-                profiles = DEFAULT_PROFILES
-            if use_llm and llm_key:
-                os.environ["GOOGLE_API_KEY"] = llm_key
+            profiles = build_profiles(st.session_state.agent_count)
+            if not llm_key.strip():
+                raise ValueError("GOOGLE_API_KEY is required to run the simulation.")
+            os.environ["GOOGLE_API_KEY"] = llm_key.strip()
             config = SimulationConfig(
                 runs=runs,
                 min_team_size=team_range[0],
                 max_team_size=team_range[1],
-                pivot_base_chance=pivot_chance,
-                research_trigger=research_trigger,
+                pivot_base_chance=0.35,
+                research_trigger=0.45,
                 seed=int(seed),
-                llm_enabled=use_llm,
                 llm_model=llm_model,
                 llm_temperature=llm_temperature,
                 llm_call_cap=int(llm_call_cap),
             )
             simulator = HackathonSimulator(profiles, config=config)
             summary = simulator.run()
-        except ValueError as err:
+        except Exception as err:
             st.error(str(err))
             summary = None
         if summary:
@@ -192,7 +149,7 @@ def main() -> None:
             st.session_state.simulation_markdown = summary_to_markdown(summary)
             st.session_state.profile_count = len(profiles)
             st.success(
-                f"Ran {runs} simulation run(s) with {st.session_state.profile_count} profiles and team range {team_range[0]}-{team_range[1]}."
+                f"Ran {runs} simulation run(s) with {st.session_state.profile_count} participants and team range {team_range[0]}-{team_range[1]}."
             )
 
     summary = st.session_state.simulation_summary
@@ -200,7 +157,7 @@ def main() -> None:
     if summary:
         st.subheader("Simulation Output")
         st.caption(
-            f"{len(summary.runs)} run(s) computed. Showing team conversations, pivots, and leaderboard insights."
+            f"{len(summary.runs)} run(s) computed. Showing team conversations, LLM insights, and leaderboard highlights."
         )
 
         tabs = st.tabs(["Runs", "Leaderboard", "Raw Data"])
@@ -219,7 +176,8 @@ def main() -> None:
                             unsafe_allow_html=True,
                         )
                         render_conversation(team.conversation_log)
-                        render_score_breakdown(team.score_breakdown)
+                        breakdown = ", ".join(f"{k}: {v:.2f}" for k, v in team.score_breakdown.items())
+                        st.markdown(f"**Scores** → {breakdown}")
                         render_plan(team.six_hour_plan)
                         st.markdown("---")
 
@@ -251,18 +209,10 @@ def main() -> None:
                 file_name="hackathon_simulation_summary.md",
                 mime="text/markdown",
             )
-            st.text_area(
-                "Summary JSON",
-                value=st.session_state.simulation_json,
-                height=350,
-            )
-            st.text_area(
-                "Summary Markdown",
-                value=st.session_state.simulation_markdown,
-                height=350,
-            )
+            st.text_area("Summary JSON", value=st.session_state.simulation_json, height=300)
+            st.text_area("Summary Markdown", value=st.session_state.simulation_markdown, height=300)
     else:
-        st.info("Configure parameters and run the simulation to see results here.")
+        st.info("Fill in your participant roster and hit Run simulation to see results here.")
 
 
 if __name__ == "__main__":

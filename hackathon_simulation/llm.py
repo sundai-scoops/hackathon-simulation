@@ -19,18 +19,26 @@ class LLMResponder:
         self.api_key = api_key or os.environ.get("GOOGLE_API_KEY")
         self.call_cap = max(0, call_cap)
         self.remaining_calls = self.call_cap
-        self._client = None
-        if self.api_key and ChatGoogleGenerativeAI is not None:
+        if not self.api_key:
+            raise ValueError("GOOGLE_API_KEY not set. Provide a valid key to run the simulation.")
+        if ChatGoogleGenerativeAI is None:
+            raise ImportError(
+                "langchain_google_genai is not installed. "
+                "Install it with `python3 -m pip install langchain-google-genai`."
+            )
+        try:
             self._client = ChatGoogleGenerativeAI(
                 model=self.model_id,
                 temperature=self.temperature,
                 max_retries=2,
                 google_api_key=self.api_key,
             )
+        except Exception as exc:  # pragma: no cover - external dependency
+            raise RuntimeError(f"Failed to initialise LLM client: {exc}") from exc
 
     @property
     def available(self) -> bool:
-        return self._client is not None
+        return True
 
     def generate_team_update(
         self,
@@ -40,10 +48,8 @@ class LLMResponder:
         metrics: Optional[dict[str, float]] = None,
         scores: Optional[dict[str, float]] = None,
     ) -> Optional[str]:
-        if not self._client:
-            return None
         if self.remaining_calls == 0:
-            return None
+            raise RuntimeError("LLM call cap reached for this simulation.")
         member_lines = ", ".join(f"{member.name} ({member.role})" for member in team)
         metrics_str = json_pretty(metrics) if metrics else "Not supplied"
         scores_str = json_pretty(scores) if scores else "Not yet scored"
@@ -61,9 +67,8 @@ class LLMResponder:
         )
         try:
             response = self._client.invoke(prompt)
-        except Exception:
-            self._client = None
-            return None
+        except Exception as exc:  # pragma: no cover - external dependency
+            raise RuntimeError(f"LLM call failed: {exc}") from exc
         self.remaining_calls = max(0, self.remaining_calls - 1)
         text = ""
         if hasattr(response, "content"):
@@ -74,10 +79,7 @@ class LLMResponder:
 
 
 def build_responder(config: SimulationConfig) -> Optional[LLMResponder]:
-    responder = LLMResponder(config.llm_model, config.llm_temperature, config.llm_call_cap)
-    if responder.available:
-        return responder
-    return None
+    return LLMResponder(config.llm_model, config.llm_temperature, config.llm_call_cap)
 
 
 def json_pretty(payload: Optional[dict[str, float]]) -> str:

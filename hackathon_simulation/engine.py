@@ -22,9 +22,7 @@ class HackathonSimulator:
             raise ValueError("At least one agent profile is required.")
         self.profiles = list(profiles)
         self.config = config or SimulationConfig()
-        self.llm = build_responder(self.config) if self.config.llm_enabled else None
-        self._llm_notified = False
-        self._llm_cap_notified = False
+        self.llm = build_responder(self.config)
 
     def run(self) -> SimulationSummary:
         rng = random.Random(self.config.seed)
@@ -465,14 +463,7 @@ class HackathonSimulator:
         phase: str,
         metrics: Optional[Dict[str, float]] = None,
         scores: Optional[Dict[str, float]] = None,
-    ) -> Optional[str]:
+    ) -> str:
         if not self.llm:
-            if self.config.llm_enabled and not self._llm_notified:
-                self._llm_notified = True
-                print("LLM requested but no API key found; falling back to heuristic output.")
-            return None
-        insight = self.llm.generate_team_update(team, idea, phase, metrics, scores)
-        if insight is None and self.llm.remaining_calls == 0 and not self._llm_cap_notified:
-            self._llm_cap_notified = True
-            print("LLM call cap reached; remaining phases will use heuristic narration.")
-        return insight
+            raise RuntimeError("LLM responder not configured. Provide Gemini credentials to run simulations.")
+        return self.llm.generate_team_update(team, idea, phase, metrics, scores)
